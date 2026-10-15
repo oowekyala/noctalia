@@ -274,10 +274,13 @@ namespace noctalia::theme {
       return std::unexpected("invalid image dimensions");
     }
 
+    return resizeForPalette(decoded->pixels.data(), srcW, srcH, scheme);
+  }
+
+  LoadedImage resizeForPalette(const std::uint8_t* rgba, int width, int height, Scheme scheme) {
     // Force-resize to 112×112 (aspect ratio ignored).
-    std::vector<uint8_t> resizedRgba = isMaterialScheme(scheme)
-        ? triangleResize(decoded->pixels.data(), srcW, srcH, kTarget, kTarget)
-        : boxResize(decoded->pixels.data(), srcW, srcH, kTarget, kTarget);
+    std::vector<uint8_t> resizedRgba = isMaterialScheme(scheme) ? triangleResize(rgba, width, height, kTarget, kTarget)
+                                                                : boxResize(rgba, width, height, kTarget, kTarget);
 
     LoadedImage out;
     out.rgb.resize(kTarget * kTarget * 3);

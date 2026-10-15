@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
 
 class ConfigService;
 class HttpClient;
@@ -110,6 +111,9 @@ namespace noctalia::theme {
     // Memoized wallpaper palette (see resolveWallpaperGenerated); any key mismatch re-decodes.
     std::optional<GeneratedPalette> m_wallpaperCacheGenerated;
     WallpaperPaletteKey m_wallpaperCacheKey;
+    // wallpaper_polarity variant listener, and the images whose palette was made again once their variant appeared.
+    std::uint64_t m_variantListener = 0;
+    std::unordered_set<std::string> m_variantRefreshed;
 
     // Main thread: the decode whose result is still wanted, and the last key that failed so a
     // broken file falls back to the builtin palette instead of re-queueing forever.

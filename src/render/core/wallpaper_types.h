@@ -3,7 +3,6 @@
 #include "render/core/color.h"
 #include "render/core/mat3.h"
 #include "render/core/texture_handle.h"
-#include "render/core/wallpaper_polarity.h"
 
 #include <cstdint>
 
@@ -70,8 +69,6 @@ struct WallpaperLayer {
   Color color = rgba(0.0F, 0.0F, 0.0F, 1.0F);
   float imageWidth = 0.0F;
   float imageHeight = 0.0F;
-  // Lightness inversion for an image that doesn't suit the theme mode.
-  wallpaper_polarity::Transform polarity;
 };
 
 // All inputs for a single wallpaper draw: the two cross-faded layers plus

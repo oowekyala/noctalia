@@ -7,6 +7,7 @@
 #include "core/log.h"
 #include "core/process/process.h"
 #include "ipc/ipc_service.h"
+#include "render/core/wallpaper_polarity.h"
 #include "theme/community_templates.h"
 #include "theme/hook_runner.h"
 #include "theme/template_engine.h"
@@ -298,6 +299,23 @@ namespace noctalia::theme {
     });
   }
 
+  namespace {
+
+    // {{ image }}: the wallpaper as the shell shows it in the templates' mode, its inverted version's file when it is
+    // inverted there (wallpaper.match_theme_mode) and that file is written; else the image itself.
+    std::string shownImagePath(const Config& config, const std::string& path, std::string_view mode) {
+      if (path.empty() || !config.wallpaper.matchThemeMode) {
+        return path;
+      }
+      const auto analysis = wallpaper_polarity::cached(path);
+      if (!analysis.has_value() || !wallpaper_polarity::invertedIn(*analysis, mode == "light")) {
+        return path;
+      }
+      return wallpaper_polarity::variantFile(path).value_or(path);
+    }
+
+  } // namespace
+
   TemplateApplyService::ApplyRequest
   TemplateApplyService::makeRequest(const GeneratedPalette& palette, std::string_view defaultMode) const {
     const Config& config = m_config.config();
@@ -307,7 +325,7 @@ namespace noctalia::theme {
         .templates = theme.templates,
         .configTable = std::make_shared<const toml::table>(config_export::serialize(config)),
         .defaultMode = std::string(defaultMode),
-        .imagePath = m_config.getPaletteWallpaperPath(),
+        .imagePath = shownImagePath(config, m_config.getPaletteWallpaperPath(), defaultMode),
         .schemeType = schemeTypeFromConfig(theme),
     };
   }

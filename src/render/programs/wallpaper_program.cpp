@@ -1,14 +1,9 @@
 #include "render/programs/wallpaper_program.h"
 
-#include "render/core/wallpaper_polarity.h"
 #include "render/programs/wallpaper_sampling_glsl.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace {
 
@@ -47,14 +42,6 @@ uniform float u_imageHeight1;
 uniform float u_imageWidth2;
 uniform float u_imageHeight2;
 uniform vec4 u_fillColor;
-// Lightness inversion per source (wallpaper_polarity.h): x inverts when 1, y and z are the
-// image's toe-lightness range; the target is the range it is mapped onto, reversed.
-uniform vec4 u_polarity1;
-uniform vec4 u_polarity2;
-uniform vec2 u_target1;
-uniform vec2 u_target2;
-// Largest chroma sRGB can show, as a fraction of 0.4: hue across, lightness down.
-uniform sampler2D u_chromaTable;
 
 varying vec2 v_texcoord;
 )";
@@ -74,91 +61,19 @@ vec4 sampleWithFillMode(sampler2D tex, vec2 uv, float imgWidth, float imgHeight)
     return texture2D(tex, transformedUV);
 }
 
-vec3 srgbToLinear(vec3 c) {
-    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
-}
-
-vec3 linearToSrgb(vec3 c) {
-    c = clamp(c, 0.0, 1.0);
-    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
-}
-
-float cbrt(float x) {
-    return sign(x) * pow(abs(x), 1.0 / 3.0);
-}
-
-vec3 linearToOklab(vec3 c) {
-    float l = cbrt(0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b);
-    float m = cbrt(0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b);
-    float s = cbrt(0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b);
-    return vec3(
-        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
-        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
-        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
-}
-
-vec3 oklabToLinear(vec3 lab) {
-    float l = lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z;
-    float m = lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z;
-    float s = lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z;
-    l = l * l * l;
-    m = m * m * m;
-    s = s * s * s;
-    return vec3(
-        4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
-}
-
-// Okhsl's toe: OKLab lightness closer to CIELAB's, which OKLab overstates near black.
-float toe(float x) {
-    float k3 = 1.206 / 1.03;
-    float a = k3 * x - 0.206;
-    return 0.5 * (a + sqrt(a * a + 4.0 * 0.03 * k3 * x));
-}
-
-float toeInverse(float x) {
-    return (x * x + 0.206 * x) / ((1.206 / 1.03) * (x + 0.03));
-}
-
-// The image's toe lightness stretched from its own range (raised by a black point) onto the
-// target one, reversed, with the chroma it had where sRGB can show it at the new lightness, and
-// the most it can show there (same hue) where it can't; near-black pixels lose their chroma.
-// Same as wallpaper_polarity::apply() on the CPU.
-vec4 applyPolarity(vec4 color, vec4 polarity, vec2 target) {
-    if (polarity.x < 0.5) {
-        return color;
-    }
-    vec3 lab = linearToOklab(srgbToLinear(color.rgb));
-    float sourceToe = toe(max(lab.x, 0.0));
-    float t = clamp((sourceToe - polarity.y) / max(polarity.z - polarity.y, 0.001), 0.0, 1.0);
-    float lightness = toeInverse(target.y - (target.y - target.x) * t);
-    vec2 ab = lab.yz * smoothstep(0.0, 0.1, sourceToe);
-    float chroma = length(ab);
-    float hue = fract(atan(ab.y, ab.x) / 6.28318530718 + 1.0);
-    // Nearest table entry, as the CPU side rounds (wallpaper_polarity.cpp).
-    float column = mod(floor(hue * 360.0 + 0.5), 360.0);
-    float row = floor(lightness * 255.0 + 0.5);
-    float maxChroma = texture2D(u_chromaTable, vec2((column + 0.5) / 360.0, (row + 0.5) / 256.0)).r * 0.4;
-    float scale = chroma > maxChroma ? maxChroma / max(chroma, 1e-6) : 1.0;
-    return vec4(linearToSrgb(oklabToLinear(vec3(lightness, ab * scale))), color.a);
-}
-
-vec4 sampleSource(
-    sampler2D tex, vec2 uv, float imgWidth, float imgHeight, float sourceKind, vec4 sourceColor, vec4 polarity,
-    vec2 target) {
+vec4 sampleSource(sampler2D tex, vec2 uv, float imgWidth, float imgHeight, float sourceKind, vec4 sourceColor) {
     if (sourceKind > 0.5) {
         return sourceColor;
     }
-    return applyPolarity(sampleWithFillMode(tex, uv, imgWidth, imgHeight), polarity, target);
+    return sampleWithFillMode(tex, uv, imgWidth, imgHeight);
 }
 )";
 
   constexpr char kFadeFragment[] = R"(
 void main() {
     vec2 uv = v_texcoord;
-    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1, u_polarity1, u_target1);
-    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2, u_polarity2, u_target2);
+    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1);
+    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2);
     gl_FragColor = mix(color1, color2, u_progress);
 }
 )";
@@ -169,8 +84,8 @@ uniform float u_smoothness;
 
 void main() {
     vec2 uv = v_texcoord;
-    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1, u_polarity1, u_target1);
-    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2, u_polarity2, u_target2);
+    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1);
+    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2);
 
     float mappedSmoothness = mix(0.001, 0.5, u_smoothness * u_smoothness);
     float extendedProgress = u_progress * (1.0 + 2.0 * mappedSmoothness) - mappedSmoothness;
@@ -208,8 +123,8 @@ uniform float u_aspectRatio;
 
 void main() {
     vec2 uv = v_texcoord;
-    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1, u_polarity1, u_target1);
-    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2, u_polarity2, u_target2);
+    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1);
+    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2);
 
     float mappedSmoothness = mix(0.001, 0.5, u_smoothness * u_smoothness);
 
@@ -239,8 +154,8 @@ uniform float u_angle;
 
 void main() {
     vec2 uv = v_texcoord;
-    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1, u_polarity1, u_target1);
-    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2, u_polarity2, u_target2);
+    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1);
+    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2);
 
     float mappedSmoothness = mix(0.001, 0.3, u_smoothness * u_smoothness);
 
@@ -295,8 +210,8 @@ void main() {
     float scale2 = 1.0 + zoom * (1.0 - u_progress);
     vec2 uv2 = (uv - 0.5) / scale2 + 0.5;
 
-    vec4 color1 = sampleSource(u_source1, uv1, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1, u_polarity1, u_target1);
-    vec4 color2 = sampleSource(u_source2, uv2, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2, u_polarity2, u_target2);
+    vec4 color1 = sampleSource(u_source1, uv1, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1);
+    vec4 color2 = sampleSource(u_source2, uv2, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2);
 
     gl_FragColor = mix(color1, color2, u_progress);
 }
@@ -335,8 +250,8 @@ vec2 hexRound(float q, float r) {
 
 void main() {
     vec2 uv = v_texcoord;
-    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1, u_polarity1, u_target1);
-    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2, u_polarity2, u_target2);
+    vec4 color1 = sampleSource(u_source1, uv, u_imageWidth1, u_imageHeight1, u_sourceKind1, u_sourceColor1);
+    vec4 color2 = sampleSource(u_source2, uv, u_imageWidth2, u_imageHeight2, u_sourceKind2, u_sourceColor2);
 
     float mappedSmoothness = mix(0.001, 0.5, u_smoothness * u_smoothness);
 
@@ -381,16 +296,11 @@ void WallpaperProgram::ensureInitialized() {
   initProgram(static_cast<std::size_t>(WallpaperTransition::Stripes), kStripesFragment);
   initProgram(static_cast<std::size_t>(WallpaperTransition::Zoom), kZoomFragment);
   initProgram(static_cast<std::size_t>(WallpaperTransition::Honeycomb), kHoneycombFragment);
-  initChromaTable();
 }
 
 void WallpaperProgram::destroy() {
   for (auto& pd : m_programs) {
     pd.program.destroy();
-  }
-  if (m_chromaTable != 0) {
-    glDeleteTextures(1, &m_chromaTable);
-    m_chromaTable = 0;
   }
 }
 
@@ -398,29 +308,6 @@ void WallpaperProgram::abandon() noexcept {
   for (auto& pd : m_programs) {
     pd.program.abandon();
   }
-  m_chromaTable = 0;
-}
-
-void WallpaperProgram::initChromaTable() {
-  using namespace wallpaper_polarity;
-  const std::vector<float>& table = maxChromaTable();
-  // Rounded down, so the shader never allows more chroma than sRGB can show.
-  std::vector<std::uint8_t> bytes(table.size());
-  std::ranges::transform(table, bytes.begin(), [](float chroma) {
-    return static_cast<std::uint8_t>(std::clamp(std::floor(chroma / kTableMaxChroma * 255.0F), 0.0F, 255.0F));
-  });
-  glGenTextures(1, &m_chromaTable);
-  glBindTexture(GL_TEXTURE_2D, m_chromaTable);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexImage2D(
-      GL_TEXTURE_2D, 0, GL_LUMINANCE, kTableHues, kTableLightness, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, bytes.data()
-  );
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void WallpaperProgram::initProgram(std::size_t index, const char* fragSource) {
@@ -464,11 +351,6 @@ void WallpaperProgram::initProgram(std::size_t index, const char* fragSource) {
   pd.angleLoc = glGetUniformLocation(id, "u_angle");
   pd.maxBlockSizeLoc = glGetUniformLocation(id, "u_maxBlockSize");
   pd.cellSizeLoc = glGetUniformLocation(id, "u_cellSize");
-  pd.polarity1Loc = glGetUniformLocation(id, "u_polarity1");
-  pd.polarity2Loc = glGetUniformLocation(id, "u_polarity2");
-  pd.target1Loc = glGetUniformLocation(id, "u_target1");
-  pd.target2Loc = glGetUniformLocation(id, "u_target2");
-  pd.chromaTableLoc = glGetUniformLocation(id, "u_chromaTable");
 
   if (pd.positionLoc < 0
       || pd.surfaceSizeLoc < 0
@@ -511,22 +393,6 @@ void WallpaperProgram::draw(const WallpaperDrawParams& p) const {
   if (pd.source2Loc >= 0) {
     glUniform1i(pd.source2Loc, 1);
   }
-
-  glActiveTexture(GL_TEXTURE2);
-  glBindTexture(GL_TEXTURE_2D, m_chromaTable);
-  if (pd.chromaTableLoc >= 0) {
-    glUniform1i(pd.chromaTableLoc, 2);
-  }
-  const auto setPolarity = [](GLint polarityLoc, GLint targetLoc, const wallpaper_polarity::Transform& t) {
-    if (polarityLoc >= 0) {
-      glUniform4f(polarityLoc, t.invert ? 1.0F : 0.0F, t.sourceLow, t.sourceHigh, 0.0F);
-    }
-    if (targetLoc >= 0) {
-      glUniform2f(targetLoc, t.targetLow, t.targetHigh);
-    }
-  };
-  setPolarity(pd.polarity1Loc, pd.target1Loc, p.from.polarity);
-  setPolarity(pd.polarity2Loc, pd.target2Loc, p.to.polarity);
 
   // Common uniforms
   if (pd.sourceKind1Loc >= 0)

@@ -48,13 +48,22 @@ struct WallpaperInstance {
   // Image still decoding; it starts the change to loadingPath once its texture is uploaded.
   SharedTextureCache::Lease loadingImage;
   std::string loadingPath;
+  // While the inverted version of a loaded image is rendered (loadingImage), the original.
+  SharedTextureCache::Lease loadingCounterpart;
+  bool loadingInverted = false;
 
-  // Lightness analysis of the shown and incoming images (wallpaper_polarity.h), and how
-  // each is drawn in the current theme mode.
+  // wallpaper.match_theme_mode (wallpaper_polarity.h): each image's lightness analysis,
+  // and whether it is shown inverted.
   std::optional<wallpaper_polarity::Analysis> currentAnalysis;
   std::optional<wallpaper_polarity::Analysis> nextAnalysis;
-  wallpaper_polarity::Transform currentPolarity;
-  wallpaper_polarity::Transform nextPolarity;
+  bool currentInverted = false;
+  bool nextInverted = false;
+  // The shown image's other version (inverted or original), held only until its texture is
+  // ready: to crossfade to it after a theme mode change, or, for an inverted version not
+  // rendered yet, so that the palette of the other mode has it. Only the shown version
+  // stays resident: the inverted one is rendered again from the original in milliseconds,
+  // and the original is decoded again from its file.
+  SharedTextureCache::Lease currentCounterpart;
 
   // Transition state
   float transitionTime = 0.0F;

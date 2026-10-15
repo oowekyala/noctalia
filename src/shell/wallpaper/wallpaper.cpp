@@ -330,6 +330,18 @@ std::string Wallpaper::currentPath() const {
   return {};
 }
 
+std::string Wallpaper::currentShownFile() const {
+  for (const auto& inst : m_instances) {
+    if (inst->currentImage.texture().valid() && !inst->currentPath.empty()) {
+      if (!inst->currentInverted) {
+        return inst->currentPath;
+      }
+      return wallpaper_polarity::variantFile(inst->currentPath).value_or(std::string{});
+    }
+  }
+  return {};
+}
+
 bool Wallpaper::ownsSurface(wl_surface* surface) const noexcept {
   if (surface == nullptr) {
     return false;
@@ -1269,12 +1281,15 @@ void Wallpaper::createInstance(const WaylandOutput& output) {
 void Wallpaper::releaseInstanceTextures(WallpaperInstance& inst) {
   inst.currentImage.reset();
   inst.nextImage.reset();
+  inst.currentCounterpart.reset();
   cancelLoading(inst);
 }
 
 void Wallpaper::cancelLoading(WallpaperInstance& instance) {
   instance.loadingImage.reset();
   instance.loadingPath.clear();
+  instance.loadingCounterpart.reset();
+  instance.loadingInverted = false;
 }
 
 TextureCoverage Wallpaper::textureCoverage(const WallpaperInstance& instance) const {
@@ -1317,14 +1332,7 @@ void Wallpaper::loadWallpaper(WallpaperInstance& instance, const std::string& pa
   if (path == instance.loadingPath) {
     return;
   }
-  SharedTextureCache::Lease image;
-  if (m_textureCache != nullptr) {
-    image = m_textureCache->acquire(
-        SharedTextureRequest{.path = path, .coverage = textureCoverage(instance)},
-        m_renderContext != nullptr ? &m_renderContext->backend() : nullptr,
-        [this, inst = &instance]() { onImageChanged(*inst); }
-    );
-  }
+  SharedTextureCache::Lease image = acquireImage(instance, path, false);
   if (image.empty() || image.failed()) {
     kLog.warn("failed to load {}", path);
     return;
@@ -1337,30 +1345,89 @@ void Wallpaper::loadWallpaper(WallpaperInstance& instance, const std::string& pa
   }
 
   cancelLoading(instance);
-  beginWallpaperChange(instance, path, WallpaperSourceKind::Image, std::move(image), color);
+  showLoadedImage(instance, path, std::move(image));
 }
 
 void Wallpaper::onImageChanged(WallpaperInstance& instance) {
   if (!instance.loadingImage.empty() && !instance.transitioning) {
     if (instance.loadingImage.failed()) {
+      if (instance.loadingInverted && !instance.loadingCounterpart.empty()) {
+        // No inverted version: the original, as it is.
+        kLog.warn("failed to render the inverted version of {}", instance.loadingPath);
+        SharedTextureCache::Lease original = std::move(instance.loadingCounterpart);
+        const std::string path = std::exchange(instance.loadingPath, std::string{});
+        cancelLoading(instance);
+        beginWallpaperChange(
+            instance, path, WallpaperSourceKind::Image, std::move(original), rgba(0.0F, 0.0F, 0.0F, 1.0F)
+        );
+        return;
+      }
       kLog.warn("failed to load {}", instance.loadingPath);
       cancelLoading(instance);
     } else if (instance.loadingImage.texture().valid()) {
       SharedTextureCache::Lease image = std::move(instance.loadingImage);
+      const bool inverted = instance.loadingInverted;
       const std::string path = std::exchange(instance.loadingPath, std::string{});
-      beginWallpaperChange(instance, path, WallpaperSourceKind::Image, std::move(image), rgba(0.0F, 0.0F, 0.0F, 1.0F));
+      cancelLoading(instance);
+      if (inverted) {
+        beginWallpaperChange(
+            instance, path, WallpaperSourceKind::Image, std::move(image), rgba(0.0F, 0.0F, 0.0F, 1.0F), true
+        );
+      } else {
+        showLoadedImage(instance, path, std::move(image));
+      }
       return;
     }
   }
 
-  // The shown or incoming image was re-uploaded after a GPU reset.
+  // The shown or incoming image was re-uploaded after a GPU reset, or the shown image's other version is now ready.
+  refreshPolarity(instance);
   updateRendererState(instance);
   instance.surface->requestRedraw();
 }
 
+SharedTextureCache::Lease Wallpaper::acquireImage(WallpaperInstance& instance, const std::string& path, bool inverted) {
+  if (m_textureCache == nullptr) {
+    return {};
+  }
+  return m_textureCache->acquire(
+      SharedTextureRequest{.path = path, .coverage = textureCoverage(instance), .inverted = inverted},
+      m_renderContext != nullptr ? &m_renderContext->backend() : nullptr,
+      [this, inst = &instance]() { onImageChanged(*inst); }
+  );
+}
+
+void Wallpaper::showLoadedImage(
+    WallpaperInstance& instance, const std::string& path, SharedTextureCache::Lease original
+) {
+  // Measured by the texture cache when it decoded the image, before the texture became valid.
+  const auto analysis = wallpaper_polarity::cached(path);
+  if (!invertedFor(analysis)) {
+    beginWallpaperChange(instance, path, WallpaperSourceKind::Image, std::move(original), rgba(0.0F, 0.0F, 0.0F, 1.0F));
+    return;
+  }
+  SharedTextureCache::Lease inverted = acquireImage(instance, path, true);
+  if (inverted.empty()) {
+    beginWallpaperChange(instance, path, WallpaperSourceKind::Image, std::move(original), rgba(0.0F, 0.0F, 0.0F, 1.0F));
+    return;
+  }
+  if (inverted.texture().valid()) {
+    beginWallpaperChange(
+        instance, path, WallpaperSourceKind::Image, std::move(inverted), rgba(0.0F, 0.0F, 0.0F, 1.0F), true
+    );
+    return;
+  }
+  // Rendered from the resident original on the next dispatch, which is held until then; the current wallpaper stays up
+  // meanwhile.
+  instance.loadingImage = std::move(inverted);
+  instance.loadingCounterpart = std::move(original);
+  instance.loadingInverted = true;
+  instance.loadingPath = path;
+}
+
 void Wallpaper::beginWallpaperChange(
     WallpaperInstance& instance, const std::string& path, WallpaperSourceKind kind, SharedTextureCache::Lease image,
-    const Color& color
+    const Color& color, bool inverted
 ) {
   // Measured by the texture cache when it decoded the image, before the texture became valid.
   std::optional<wallpaper_polarity::Analysis> analysis;
@@ -1378,7 +1445,7 @@ void Wallpaper::beginWallpaperChange(
       instance.nextImage = std::move(image);
       instance.nextColor = color;
       instance.nextAnalysis = analysis;
-      instance.nextPolarity = polarityFor(analysis);
+      instance.nextInverted = inverted;
       instance.pendingPath = path;
       startTransition(instance);
       return;
@@ -1388,7 +1455,8 @@ void Wallpaper::beginWallpaperChange(
     instance.currentImage = std::move(image);
     instance.currentColor = color;
     instance.currentAnalysis = analysis;
-    instance.currentPolarity = polarityFor(analysis);
+    instance.currentInverted = inverted;
+    instance.currentCounterpart.reset();
     instance.currentPath = path;
     instance.pendingPath.clear();
     instance.queuedPath.clear();
@@ -1397,6 +1465,7 @@ void Wallpaper::beginWallpaperChange(
     updateRendererState(instance);
     instance.surface->requestRedraw();
     m_changed.emit();
+    refreshPolarity(instance);
     return;
   }
 
@@ -1404,7 +1473,7 @@ void Wallpaper::beginWallpaperChange(
   instance.nextImage = std::move(image);
   instance.nextColor = color;
   instance.nextAnalysis = analysis;
-  instance.nextPolarity = polarityFor(analysis);
+  instance.nextInverted = inverted;
   instance.pendingPath = path;
   startTransition(instance);
 }
@@ -1509,6 +1578,8 @@ void Wallpaper::finishTransition(WallpaperInstance& instance) {
     m_changed.emit();
   }
 
+  // A theme mode change during the transition.
+  refreshPolarity(instance);
   runQueuedWallpaper(instance);
 }
 
@@ -1518,7 +1589,8 @@ void Wallpaper::promotePendingWallpaper(WallpaperInstance& instance) {
   instance.currentColor = std::exchange(instance.nextColor, defaultWallpaperColor());
   instance.currentPath = std::exchange(instance.pendingPath, std::string{});
   instance.currentAnalysis = std::exchange(instance.nextAnalysis, std::nullopt);
-  instance.currentPolarity = std::exchange(instance.nextPolarity, {});
+  instance.currentInverted = std::exchange(instance.nextInverted, false);
+  instance.currentCounterpart.reset();
 }
 
 void Wallpaper::discardPendingWallpaper(WallpaperInstance& instance) {
@@ -1526,7 +1598,7 @@ void Wallpaper::discardPendingWallpaper(WallpaperInstance& instance) {
   instance.nextSourceKind = WallpaperSourceKind::Image;
   instance.nextColor = defaultWallpaperColor();
   instance.nextAnalysis.reset();
-  instance.nextPolarity = {};
+  instance.nextInverted = false;
   instance.pendingPath.clear();
 }
 
@@ -1538,49 +1610,66 @@ void Wallpaper::runQueuedWallpaper(WallpaperInstance& instance) {
   }
 }
 
-wallpaper_polarity::Transform
-Wallpaper::polarityFor(const std::optional<wallpaper_polarity::Analysis>& analysis) const {
-  if (!analysis.has_value() || m_config == nullptr || !m_config->config().wallpaper.matchThemeMode) {
-    return {};
-  }
-  return wallpaper_polarity::transformFor(*analysis, directoryThemeMode() == ThemeMode::Light);
+bool Wallpaper::invertedFor(const std::optional<wallpaper_polarity::Analysis>& analysis) const {
+  return analysis.has_value()
+      && m_config != nullptr
+      && m_config->config().wallpaper.matchThemeMode
+      && wallpaper_polarity::invertedIn(*analysis, directoryThemeMode() == ThemeMode::Light);
 }
 
 void Wallpaper::refreshPolarity(WallpaperInstance& instance) {
-  const wallpaper_polarity::Transform wanted = polarityFor(instance.currentAnalysis);
-  if (instance.transitioning) {
-    // Mid-change, the outgoing image keeps how it is drawn (the palette signal fires on every frame of the palette's
-    // own animation); the incoming one follows the mode, and is checked again once it is shown.
-    instance.nextPolarity = polarityFor(instance.nextAnalysis);
+  // Mid-change, the incoming image settles it once shown (finishTransition checks again).
+  if (instance.transitioning
+      || !instance.loadingImage.empty()
+      || instance.currentSourceKind != WallpaperSourceKind::Image
+      || instance.currentPath.empty()
+      || !instance.currentAnalysis.has_value()) {
     return;
   }
-  if (wanted == instance.currentPolarity) {
+  const bool enabled = m_config->config().wallpaper.matchThemeMode;
+  const bool wanted = invertedFor(instance.currentAnalysis);
+  if (wanted == instance.currentInverted) {
+    // The inverted version is rendered once ahead, for the palette of the other mode, unless an earlier render left it
+    // on disk; a pending original isn't needed any more.
+    const SharedTextureCache::Lease& other = instance.currentCounterpart;
+    const bool rendering = !other.empty() && !instance.currentInverted && !other.failed() && !other.texture().valid();
+    if (!rendering) {
+      instance.currentCounterpart.reset();
+    }
+    if (enabled
+        && !instance.currentInverted
+        && instance.currentCounterpart.empty()
+        && !wallpaper_polarity::variantPreview(instance.currentPath).has_value()
+        && !wallpaper_polarity::variantFile(instance.currentPath).has_value()) {
+      instance.currentCounterpart = acquireImage(instance, instance.currentPath, true);
+    }
     return;
   }
 
-  // The same image in its other polarity, crossfaded: the texture is already resident, so the lease is valid now.
-  SharedTextureCache::Lease image;
-  if (instance.currentSourceKind == WallpaperSourceKind::Image && m_textureCache != nullptr) {
-    image = m_textureCache->acquire(
-        SharedTextureRequest{.path = instance.currentPath, .coverage = textureCoverage(instance)},
-        m_renderContext != nullptr ? &m_renderContext->backend() : nullptr,
-        [this, inst = &instance]() { onImageChanged(*inst); }
-    );
+  // The other version (the original when the setting was turned off), crossfaded once its texture is ready; until then
+  // the image stays as it is, and onImageChanged() comes back here.
+  SharedTextureCache::Lease other = !instance.currentCounterpart.empty()
+      ? std::move(instance.currentCounterpart)
+      : acquireImage(instance, instance.currentPath, wanted);
+  if (other.empty() || other.failed()) {
+    return;
+  }
+  if (!other.texture().valid()) {
+    instance.currentCounterpart = std::move(other);
+    return;
   }
   const auto& wpConfig = m_config->config().wallpaper;
-  if (image.empty()
-      || !image.texture().valid()
-      || wpConfig.transitionDurationMs <= 0.0F
-      || instance.surface == nullptr) {
-    instance.currentPolarity = wanted;
+  if (wpConfig.transitionDurationMs <= 0.0F || instance.surface == nullptr) {
+    instance.currentImage = std::move(other);
+    instance.currentInverted = wanted;
     return;
   }
 
   instance.nextSourceKind = WallpaperSourceKind::Image;
-  instance.nextImage = std::move(image);
+  instance.nextImage = std::move(other);
   instance.nextColor = instance.currentColor;
   instance.nextAnalysis = instance.currentAnalysis;
-  instance.nextPolarity = wanted;
+  instance.nextInverted = wanted;
   instance.pendingPath = instance.currentPath;
   instance.activeTransition = WallpaperTransition::Fade;
   instance.transitionParams = TransitionParams{};
@@ -1634,7 +1723,6 @@ void Wallpaper::updateRendererState(WallpaperInstance& instance) {
       instance.nextColor, static_cast<float>(currentTexture.width), static_cast<float>(currentTexture.height),
       static_cast<float>(nextTexture.width), static_cast<float>(nextTexture.height)
   );
-  wallpaperNode->setPolarity(instance.currentPolarity, instance.nextPolarity);
   wallpaperNode->setTransition(
       instance.activeTransition, transitionProgressForTime(instance.transitionTime), instance.transitionParams
   );

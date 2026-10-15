@@ -514,7 +514,6 @@ void RenderContext::renderNode(
       const float imageWidth2 = hasSource2 ? wallpaper->imageWidth2() : wallpaper->imageWidth1();
       const float imageHeight2 = hasSource2 ? wallpaper->imageHeight2() : wallpaper->imageHeight1();
       const float progress = hasSource2 ? wallpaper->progress() : 0.0F;
-      const auto& polarity2 = hasSource2 ? wallpaper->polarity2() : wallpaper->polarity1();
       m_backend->drawWallpaper(
           WallpaperDrawParams{
               .transition = wallpaper->transition(),
@@ -523,15 +522,13 @@ void RenderContext::renderNode(
                    .texture = wallpaper->texture1(),
                    .color = wallpaper->sourceColor1(),
                    .imageWidth = wallpaper->imageWidth1(),
-                   .imageHeight = wallpaper->imageHeight1(),
-                   .polarity = wallpaper->polarity1()},
+                   .imageHeight = wallpaper->imageHeight1()},
               .to =
                   {.kind = sourceKind2,
                    .texture = texture2,
                    .color = sourceColor2,
                    .imageWidth = imageWidth2,
-                   .imageHeight = imageHeight2,
-                   .polarity = polarity2},
+                   .imageHeight = imageHeight2},
               .surfaceWidth = sw,
               .surfaceHeight = sh,
               .quadWidth = node->width(),

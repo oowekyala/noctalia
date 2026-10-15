@@ -64,18 +64,9 @@ private:
     GLint angleLoc = -1;
     GLint maxBlockSizeLoc = -1;
     GLint cellSizeLoc = -1;
-    // Polarity (wallpaper_polarity.h)
-    GLint polarity1Loc = -1;
-    GLint polarity2Loc = -1;
-    GLint target1Loc = -1;
-    GLint target2Loc = -1;
-    GLint chromaTableLoc = -1;
   };
 
   void initProgram(std::size_t index, const char* fragSource);
-  void initChromaTable();
 
   std::array<ProgramData, kTransitionCount> m_programs;
-  // wallpaper_polarity::maxChromaTable(), 8 bits per entry, for the shader's inversion.
-  GLuint m_chromaTable = 0;
 };
