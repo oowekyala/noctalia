@@ -346,15 +346,19 @@ namespace {
         for (const std::string_view slot : {"red", "green"}) {
           const auto color = noctalia::theme::Color::fromArgb(after.at("terminal_normal_" + std::string(slot)));
           ok = expect(
-                   noctalia::theme::toOklch(color).chroma >= 0.08, label + ": " + std::string(slot) + " keeps its chroma"
+                   noctalia::theme::toOklch(color).chroma >= 0.035, label + ": " + std::string(slot) + " keeps some chroma"
                )
               && ok;
         }
-        ok = expect(
-                 after.at("terminal_normal_red") != after.at("terminal_normal_green"),
-                 label + ": red and green differ"
-             )
-            && ok;
+        // Red and green stay distinguishable (OKLab distance) even with the most muted schemes.
+        const auto lab = [](uint32_t argb) {
+          const auto lch = noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(argb));
+          return std::array<double, 3>{lch.lightness, lch.chroma * std::cos(lch.hueRadians), lch.chroma * std::sin(lch.hueRadians)};
+        };
+        const auto red = lab(after.at("terminal_normal_red"));
+        const auto green = lab(after.at("terminal_normal_green"));
+        const double distance = std::hypot(red[0] - green[0], std::hypot(red[1] - green[1], red[2] - green[2]));
+        ok = expect(distance >= 0.06, label + ": red and green are distinguishable") && ok;
       };
       check(generated->dark, pinned.dark, "dark");
       check(generated->light, pinned.light, "light");

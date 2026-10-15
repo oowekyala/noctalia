@@ -99,8 +99,10 @@ namespace noctalia::theme {
     // Below this chroma the seed is nearly gray and its hue says little; the rotation is
     // scaled down to nothing as the chroma approaches zero.
     constexpr double kSeedFullChroma = 0.08;
-    // Red and green keep at least this chroma, whatever the base scheme.
-    constexpr double kDistinctMinChroma = 0.10;
+    // Red and green keep at least this chroma, whatever the base scheme, so that they stay
+    // apart (diffs). Low enough for Monochrome and Muted to stay clearly more muted than the
+    // other schemes: they are the base scheme's own chroma, which is what they are for.
+    constexpr double kDistinctMinChroma = 0.04;
     constexpr double kPi = 3.14159265358979323846;
 
     [[nodiscard]] double wrapDegrees(double degrees) {
