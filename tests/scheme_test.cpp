@@ -369,6 +369,22 @@ namespace {
       noctalia::theme::applyTerminalScheme(withoutSource, TerminalScheme::PinnedHues, scheme);
       ok = expect(withoutSource.dark == before.dark, name + ": a palette without a source color is left alone") && ok;
     }
+    // Monochrome is the most muted: its red and green are fainter than Muted's.
+    const auto monochrome = noctalia::theme::generate(rgb, Scheme::Monochrome);
+    const auto muted = noctalia::theme::generate(rgb, Scheme::Muted);
+    if (expect(monochrome.has_value() && muted.has_value(), "monochrome and muted palettes generated")) {
+      auto monochromePinned = *monochrome;
+      auto mutedPinned = *muted;
+      noctalia::theme::applyTerminalScheme(monochromePinned, TerminalScheme::PinnedHues, Scheme::Monochrome);
+      noctalia::theme::applyTerminalScheme(mutedPinned, TerminalScheme::PinnedHues, Scheme::Muted);
+      for (const char* slot : {"terminal_normal_red", "terminal_normal_green"}) {
+        const auto chroma = [&](const noctalia::theme::GeneratedPalette& palette) {
+          return noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(palette.dark.at(slot))).chroma;
+        };
+        ok = expect(chroma(monochromePinned) < chroma(mutedPinned) * 0.75, std::string(slot) + ": monochrome is more muted than muted")
+            && ok;
+      }
+    }
     return ok;
   }
 

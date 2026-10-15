@@ -63,30 +63,34 @@ namespace noctalia::theme {
     struct PinnedPreset {
       double chroma;
       double capScale;
+      // The chroma of red and green, at least: they must stay apart (diffs), also with
+      // the schemes whose own chroma is lower than that. Monochrome is the exception: it
+      // is for people who want no color, so there they follow its chroma.
+      double distinctChroma;
     };
 
     [[nodiscard]] constexpr PinnedPreset pinnedPreset(Scheme base) {
       switch (base) {
       case Scheme::FruitSalad:
-        return {0.16, 1.3};
+        return {0.16, 1.3, 0.10};
       case Scheme::Monochrome:
-        return {0.05, 0.5};
+        return {0.05, 0.5, 0.05};
       case Scheme::Vibrant:
-        return {0.18, 1.0};
+        return {0.18, 1.0, 0.10};
       case Scheme::Faithful:
-        return {0.16, 1.0};
+        return {0.16, 1.0, 0.10};
       case Scheme::Soft:
-        return {0.10, 0.8};
+        return {0.10, 0.8, 0.10};
       case Scheme::Dysfunctional:
-        return {0.16, 2.0};
+        return {0.16, 2.0, 0.10};
       case Scheme::Muted:
-        return {0.07, 0.5};
+        return {0.07, 0.5, 0.10};
       case Scheme::TonalSpot:
       case Scheme::Content:
       case Scheme::Rainbow:
         break;
       }
-      return {0.15, 1.0};
+      return {0.15, 1.0, 0.10};
     }
 
     // Contrast of the normal colors on the terminal background.
@@ -99,10 +103,6 @@ namespace noctalia::theme {
     // Below this chroma the seed is nearly gray and its hue says little; the rotation is
     // scaled down to nothing as the chroma approaches zero.
     constexpr double kSeedFullChroma = 0.08;
-    // Red and green keep at least this chroma, whatever the base scheme, so that they stay
-    // apart (diffs). Low enough for Monochrome and Muted to stay clearly more muted than the
-    // other schemes: they are the base scheme's own chroma, which is what they are for.
-    constexpr double kDistinctMinChroma = 0.04;
     constexpr double kPi = 3.14159265358979323846;
 
     [[nodiscard]] double wrapDegrees(double degrees) {
@@ -150,7 +150,7 @@ namespace noctalia::theme {
       for (const PinnedHue& pinned : kPinnedHues) {
         const double hueRadians =
             harmonizedHue(pinned.hue, seedHue, pinned.cap * preset.capScale, pull) * kPi / 180.0;
-        const double chroma = pinned.keepDistinct ? std::max(preset.chroma, kDistinctMinChroma) : preset.chroma;
+        const double chroma = pinned.keepDistinct ? std::max(preset.chroma, preset.distinctChroma) : preset.chroma;
         const Color normal = colorForContrast(chroma, hueRadians, background, target);
         const Oklch normalLch = toOklch(normal);
         const Color bright = gamutMapToSrgb({std::clamp(normalLch.lightness + step, 0.0, 1.0),

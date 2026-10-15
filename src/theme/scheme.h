@@ -38,8 +38,10 @@ namespace noctalia::theme {
     /// then searched for a contrast target on the final terminal background. Chroma and
     /// the size of the rotation caps depend on the base scheme (Muted and Soft are less
     /// saturated and rotate less, Vibrant is more saturated, Dysfunctional rotates more;
-    /// Monochrome is nearly gray). Red and green keep a minimum chroma even then, so that
-    /// eg git diffs stay legible. Black, white, foreground, cursor and selection are kept.
+    /// Monochrome is nearly gray). Red and green keep a minimum chroma even with the muted
+    /// schemes, so that eg git diffs stay legible, except with Monochrome, where they are as
+    /// faint as the rest but still told apart. Black, white, foreground, cursor and selection
+    /// are kept.
     PinnedHues
   };
 
