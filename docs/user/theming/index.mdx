@@ -16,6 +16,7 @@ builtin           = "Noctalia"    # bundled palette name
 community_palette = "Oxocarbon"   # community palette name when source = "community"
 custom_palette    = "MyPalette"   # file name (without .json) when source = "custom"
 wallpaper_scheme  = "m3-content"  # generator used when source = "wallpaper"
+terminal_scheme   = "default"     # default | pinned-hues: how the terminal colors of a wallpaper palette are made
 pure_black_dark   = false         # replace dark-mode backgrounds with pure black
 sync_color_scheme = true          # sync the GNOME color-scheme preference with mode
 ```
@@ -129,6 +130,20 @@ Picks the generator when `source = "wallpaper"`:
 | `soft` | Custom - source-faithful with gentler saturation |
 | `dysfunctional` | Custom - deliberately off-kilter |
 | `muted` | Custom - low-saturation |
+
+## `terminal_scheme`
+
+Picks how the terminal colors (`terminal_normal_*` and `terminal_bright_*`) are made when `source = "wallpaper"`:
+
+| Value | Description |
+|-------|-------------|
+| `default` | The generator's own terminal colors, which reuse its accent roles |
+| `pinned-hues` | Red, yellow, green, cyan, blue and magenta each keep their own hue, rotated slightly toward the wallpaper's, with enough contrast on the terminal background |
+
+The generators fill the terminal slots from their accent roles, so with some schemes several of them end up as shades of one hue.
+`pinned-hues` replaces those six colors (normal and bright) and keeps black, white, foreground, cursor and selection. How saturated they are, and how far they follow the wallpaper's hue, depends on `wallpaper_scheme`: `muted` and `soft` stay subdued, `vibrant` more saturated.
+Other palette sources bring terminal colors of their own and are not affected.
+It runs after `pure_black_dark` and the high-contrast option, so the colors fit the final background.
 
 ## Where next?
 

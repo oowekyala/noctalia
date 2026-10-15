@@ -1765,6 +1765,9 @@ struct ThemeConfig {
   std::string communityPalette = "Oxocarbon";
   std::string customPalette;
   std::string wallpaperScheme = "m3-content";
+  // How the terminal colors of a wallpaper palette are made: "default" keeps the base
+  // scheme's, "pinned-hues" regenerates them (theme/scheme.h, TerminalScheme).
+  std::string terminalScheme = "default";
   ThemeMode mode = ThemeMode::Dark;
   ShellThemeMode shellMode = ShellThemeMode::Follow;
   bool pureBlackDark = false;

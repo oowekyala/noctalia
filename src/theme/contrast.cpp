@@ -7,12 +7,6 @@ namespace noctalia::theme {
 
   namespace {
 
-    struct Oklch {
-      double lightness;
-      double chroma;
-      double hueRadians;
-    };
-
     struct LinearRgb {
       double red;
       double green;
@@ -30,25 +24,6 @@ namespace noctalia::theme {
       if (channel <= 0.0031308)
         return channel * 12.92;
       return 1.055 * std::pow(channel, 1.0 / 2.4) - 0.055;
-    }
-
-    Oklch toOklch(const Color& color) {
-      const double red = linearizeChannel(color.r);
-      const double green = linearizeChannel(color.g);
-      const double blue = linearizeChannel(color.b);
-
-      const double l = std::cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
-      const double m = std::cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
-      const double s = std::cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
-
-      const double lightness = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
-      const double a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
-      const double b = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
-      return {
-          .lightness = lightness,
-          .chroma = std::hypot(a, b),
-          .hueRadians = std::atan2(b, a),
-      };
     }
 
     LinearRgb fromOklch(const Oklch& color) {
@@ -85,30 +60,49 @@ namespace noctalia::theme {
       return Color(toByte(color.red), toByte(color.green), toByte(color.blue));
     }
 
-    Color gamutMapToSrgb(Oklch color) {
-      LinearRgb linear = fromOklch(color);
-      if (isInSrgbGamut(linear))
-        return toSrgbColor(linear);
-
-      double low = 0.0;
-      double high = color.chroma;
-      color.chroma = 0.0;
-      LinearRgb best = fromOklch(color);
-      for (int i = 0; i < 20; ++i) {
-        const double candidateChroma = (low + high) / 2.0;
-        color.chroma = candidateChroma;
-        const LinearRgb candidate = fromOklch(color);
-        if (isInSrgbGamut(candidate)) {
-          low = candidateChroma;
-          best = candidate;
-        } else {
-          high = candidateChroma;
-        }
-      }
-      return toSrgbColor(best);
-    }
-
   } // namespace
+
+  Oklch toOklch(const Color& color) {
+    const double red = linearizeChannel(color.r);
+    const double green = linearizeChannel(color.g);
+    const double blue = linearizeChannel(color.b);
+
+    const double l = std::cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+    const double m = std::cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+    const double s = std::cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+
+    const double lightness = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+    const double a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+    const double b = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+    return {
+        .lightness = lightness,
+        .chroma = std::hypot(a, b),
+        .hueRadians = std::atan2(b, a),
+    };
+  }
+
+  Color gamutMapToSrgb(Oklch color) {
+    LinearRgb linear = fromOklch(color);
+    if (isInSrgbGamut(linear))
+      return toSrgbColor(linear);
+
+    double low = 0.0;
+    double high = color.chroma;
+    color.chroma = 0.0;
+    LinearRgb best = fromOklch(color);
+    for (int i = 0; i < 20; ++i) {
+      const double candidateChroma = (low + high) / 2.0;
+      color.chroma = candidateChroma;
+      const LinearRgb candidate = fromOklch(color);
+      if (isInSrgbGamut(candidate)) {
+        low = candidateChroma;
+        best = candidate;
+      } else {
+        high = candidateChroma;
+      }
+    }
+    return toSrgbColor(best);
+  }
 
   double relativeLuminance(int r, int g, int b) {
     return 0.2126 * linearizeChannel(r) + 0.7152 * linearizeChannel(g) + 0.0722 * linearizeChannel(b);

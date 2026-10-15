@@ -4,6 +4,17 @@
 
 namespace noctalia::theme {
 
+  struct Oklch {
+    double lightness;
+    double chroma;
+    double hueRadians;
+  };
+
+  Oklch toOklch(const Color& color);
+
+  // The color for `color`, with its chroma reduced only as far as needed to fit in sRGB.
+  Color gamutMapToSrgb(Oklch color);
+
   double relativeLuminance(int r, int g, int b);
   double contrastRatio(const Color& a, const Color& b);
   bool isDark(const Color& c);

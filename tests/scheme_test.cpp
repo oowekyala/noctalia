@@ -2,9 +2,11 @@
 #include "theme/color.h"
 #include "theme/contrast.h"
 #include "theme/palette_generator.h"
+#include "theme/palette_transform.h"
 #include "theme/scheme.h"
 
 #include <array>
+#include <cmath>
 #include <print>
 #include <string>
 #include <string_view>
@@ -262,6 +264,110 @@ namespace {
     return ok;
   }
 
+  bool checkTerminalSchemeStrings() {
+    using noctalia::theme::TerminalScheme;
+    bool ok = true;
+    const auto pinned = noctalia::theme::terminalSchemeFromString("pinned-hues");
+    ok = expect(pinned.has_value() && *pinned == TerminalScheme::PinnedHues, "parses pinned-hues") && ok;
+    ok = expect(
+             noctalia::theme::terminalSchemeToString(TerminalScheme::Default) == "default",
+             "serializes the default terminal scheme"
+         )
+        && ok;
+    ok = expect(!noctalia::theme::terminalSchemeFromString("pinned").has_value(), "rejects unknown terminal schemes")
+        && ok;
+    return ok;
+  }
+
+  double hueDegrees(uint32_t argb) {
+    constexpr double kPi = 3.14159265358979323846;
+    double degrees = noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(argb)).hueRadians * 180.0 / kPi;
+    return degrees < 0.0 ? degrees + 360.0 : degrees;
+  }
+
+  double hueDistance(double a, double b) {
+    return std::abs(std::fmod(a - b + 540.0, 360.0) - 180.0);
+  }
+
+  bool checkPinnedHues() {
+    using noctalia::theme::Scheme;
+    using noctalia::theme::TerminalScheme;
+
+    constexpr std::array schemes{
+        Scheme::TonalSpot, Scheme::Content,  Scheme::FruitSalad, Scheme::Rainbow,       Scheme::Monochrome,
+        Scheme::Vibrant,   Scheme::Faithful, Scheme::Soft,       Scheme::Dysfunctional, Scheme::Muted,
+    };
+    struct Slot {
+      std::string_view name;
+      double hue;
+    };
+    constexpr std::array<Slot, 6> slots{{
+        {"red", 29.0}, {"yellow", 95.0}, {"green", 145.0}, {"cyan", 200.0}, {"blue", 260.0}, {"magenta", 330.0},
+    }};
+    constexpr std::array<std::string_view, 12> kept{
+        "primary",           "surface",      "terminal_background", "terminal_foreground",
+        "terminal_cursor",   "source_color", "terminal_normal_black", "terminal_normal_white",
+        "terminal_bright_black", "terminal_bright_white", "terminal_selection_bg", "on_surface",
+    };
+
+    bool ok = true;
+    const auto rgb = makeColorfulBuffer();
+    for (const Scheme scheme : schemes) {
+      const std::string name{noctalia::theme::schemeToString(scheme)};
+      const auto generated = noctalia::theme::generate(rgb, scheme);
+      if (!expect(generated.has_value(), name + " palette generated")) {
+        ok = false;
+        continue;
+      }
+
+      auto unchanged = *generated;
+      noctalia::theme::applyTerminalScheme(unchanged, TerminalScheme::Default, scheme);
+      ok = expect(unchanged == *generated, name + ": the default terminal scheme changes nothing") && ok;
+
+      auto pinned = *generated;
+      noctalia::theme::applyTerminalScheme(pinned, TerminalScheme::PinnedHues, scheme);
+      const auto check = [&](const auto& before, const auto& after, std::string_view mode) {
+        const std::string label = name + " " + std::string(mode);
+        const auto background = noctalia::theme::Color::fromArgb(after.at("terminal_background"));
+        for (const std::string_view key : kept) {
+          ok = expect(before.at(std::string(key)) == after.at(std::string(key)), label + ": keeps " + std::string(key))
+              && ok;
+        }
+        for (const Slot& slot : slots) {
+          for (const char* group : {"terminal_normal_", "terminal_bright_"}) {
+            const std::string key = group + std::string(slot.name);
+            const auto color = noctalia::theme::Color::fromArgb(after.at(key));
+            ok = expect(noctalia::theme::contrastRatio(color, background) >= 4.5, label + ": " + key + " is readable")
+                && ok;
+          }
+          const double hue = hueDistance(hueDegrees(after.at("terminal_normal_" + std::string(slot.name))), slot.hue);
+          ok = expect(hue <= 55.0, label + ": " + std::string(slot.name) + " stays near its hue") && ok;
+        }
+        for (const std::string_view slot : {"red", "green"}) {
+          const auto color = noctalia::theme::Color::fromArgb(after.at("terminal_normal_" + std::string(slot)));
+          ok = expect(
+                   noctalia::theme::toOklch(color).chroma >= 0.08, label + ": " + std::string(slot) + " keeps its chroma"
+               )
+              && ok;
+        }
+        ok = expect(
+                 after.at("terminal_normal_red") != after.at("terminal_normal_green"),
+                 label + ": red and green differ"
+             )
+            && ok;
+      };
+      check(generated->dark, pinned.dark, "dark");
+      check(generated->light, pinned.light, "light");
+
+      auto withoutSource = *generated;
+      withoutSource.dark.erase("source_color");
+      const auto before = withoutSource;
+      noctalia::theme::applyTerminalScheme(withoutSource, TerminalScheme::PinnedHues, scheme);
+      ok = expect(withoutSource.dark == before.dark, name + ": a palette without a source color is left alone") && ok;
+    }
+    return ok;
+  }
+
 } // namespace
 
 int main() {
@@ -271,5 +377,7 @@ int main() {
   ok = checkContainerSaturationHeadroom() && ok;
   ok = checkPerceptualContrastAdjustment() && ok;
   ok = checkTerminalContrast() && ok;
+  ok = checkTerminalSchemeStrings() && ok;
+  ok = checkPinnedHues() && ok;
   return ok ? 0 : 1;
 }

@@ -273,6 +273,12 @@ namespace settings {
       );
     }
 
+    SelectSetting terminalSchemeSelect(std::string_view selected) {
+      return plainSelect(
+          {{"default", "theme.terminal-scheme.default"}, {"pinned-hues", "theme.terminal-scheme.pinned-hues"}}, selected
+      );
+    }
+
     std::vector<SelectOption> controlCenterShortcutOptions(const Config& cfg) {
       auto catalog = ShortcutRegistry::catalog();
       std::vector<SelectOption> opts;
@@ -518,6 +524,11 @@ namespace settings {
           SettingsSection::Appearance, "theme", tr("settings.schema.appearance.wallpaper-generation-scheme.label"),
           tr("settings.schema.appearance.wallpaper-generation-scheme.description"), {"theme", "wallpaper_scheme"},
           wallpaperSchemeSelect(cfg.theme.wallpaperScheme), "wallpaper palette generator scheme material you m3 colors"
+      ));
+      entries.push_back(makeEntry(
+          SettingsSection::Appearance, "theme", tr("settings.schema.appearance.terminal-scheme.label"),
+          tr("settings.schema.appearance.terminal-scheme.description"), {"theme", "terminal_scheme"},
+          terminalSchemeSelect(cfg.theme.terminalScheme), "terminal colors scheme pinned hues harmonize ansi"
       ));
     } else if (cfg.theme.source == PaletteSource::Community) {
       SettingControl communityPaletteControl =

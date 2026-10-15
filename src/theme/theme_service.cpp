@@ -640,6 +640,18 @@ namespace noctalia::theme {
       applyHighContrast(resolved->generated);
     }
 
+    // Last, so that the colors are made for the final terminal background. Wallpaper palettes
+    // only: the others bring terminal colors of their own.
+    if (cfg.source == PaletteSource::Wallpaper) {
+      const auto terminalScheme = terminalSchemeFromString(cfg.terminalScheme);
+      if (!terminalScheme.has_value()) {
+        kLog.warn("unknown terminal scheme '{}', using the default", cfg.terminalScheme);
+      } else if (*terminalScheme != TerminalScheme::Default) {
+        const auto baseScheme = schemeFromString(cfg.wallpaperScheme).value_or(Scheme::Content);
+        applyTerminalScheme(resolved->generated, *terminalScheme, baseScheme);
+      }
+    }
+
     if (cfg.pureBlackDark || m_config.config().accessibility.highContrast) {
       if (resolved->shellMode != "light") {
         resolved->palette = mapGeneratedPaletteMode(resolved->generated.dark);

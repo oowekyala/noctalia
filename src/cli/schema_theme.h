@@ -11,6 +11,8 @@ namespace noctalia::cli {
   inline constexpr std::array<std::string_view, 2> kThemeModeChoices{"dark", "light"};
   inline constexpr std::array kThemeFlags{
       Flag{"--scheme", {}, "<name>", "Color generation scheme", theme::kSchemeNames, "m3-tonal-spot", false, false},
+      Flag{"--terminal-scheme", {}, "<name>", "How the terminal colors are generated (default keeps the scheme's own)",
+           theme::kTerminalSchemeNames, "default", false, false},
       Flag{"--dark", {}, {}, "Emit only the dark variant", {}, {}, false, false},
       Flag{"--light", {}, {}, "Emit only the light variant", {}, {}, false, false},
       Flag{"--both", {}, {}, "Emit both variants under dark/light keys", {}, {}, false, false},

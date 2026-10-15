@@ -25,6 +25,24 @@ namespace noctalia::theme {
     Muted,
   };
 
+  /// Generation strategies for the terminal colors only. Applied as a palette
+  /// transform after the base scheme (see palette_transform.h), so it only replaces
+  /// the terminal tokens and never changes how the wallpaper palette is cached.
+  enum class TerminalScheme {
+    /// Default keeps the terminal colors the base scheme produced.
+    Default,
+    /// PinnedHues replaces the normal and bright red, yellow, green, cyan, blue and
+    /// magenta. Each color starts from a fixed hue, so that it stays in its own hue
+    /// range, and is rotated towards the seed color's hue by at most a capped amount
+    /// (Material's "harmonize"), less so when the seed is nearly gray. Its lightness is
+    /// then searched for a contrast target on the final terminal background. Chroma and
+    /// the size of the rotation caps depend on the base scheme (Muted and Soft are less
+    /// saturated and rotate less, Vibrant is more saturated, Dysfunctional rotates more;
+    /// Monochrome is nearly gray). Red and green keep a minimum chroma even then, so that
+    /// eg git diffs stay legible. Black, white, foreground, cursor and selection are kept.
+    PinnedHues
+  };
+
   inline constexpr std::array<std::pair<std::string_view, Scheme>, 10> kSchemeEntries{{
       {"m3-tonal-spot", Scheme::TonalSpot},
       {"m3-content", Scheme::Content},
@@ -38,10 +56,22 @@ namespace noctalia::theme {
       {"muted", Scheme::Muted},
   }};
 
+  inline constexpr std::array<std::pair<std::string_view, TerminalScheme>, 2> kTerminalSchemeEntries{{
+      {"default", TerminalScheme::Default},
+      {"pinned-hues", TerminalScheme::PinnedHues},
+  }};
+
   inline constexpr std::array<std::string_view, kSchemeEntries.size()> kSchemeNames = [] {
     std::array<std::string_view, kSchemeEntries.size()> names{};
     for (std::size_t i = 0; i < kSchemeEntries.size(); ++i)
       names[i] = kSchemeEntries[i].first;
+    return names;
+  }();
+
+  inline constexpr std::array<std::string_view, kTerminalSchemeEntries.size()> kTerminalSchemeNames = [] {
+    std::array<std::string_view, kTerminalSchemeEntries.size()> names{};
+    for (std::size_t i = 0; i < kTerminalSchemeEntries.size(); ++i)
+      names[i] = kTerminalSchemeEntries[i].first;
     return names;
   }();
 
@@ -60,5 +90,9 @@ namespace noctalia::theme {
 
   // String form used in CLI / JSON output.
   std::string_view schemeToString(Scheme s);
+
+  // Same for the terminal scheme ("default", "pinned-hues").
+  std::optional<TerminalScheme> terminalSchemeFromString(std::string_view s);
+  std::string_view terminalSchemeToString(TerminalScheme s);
 
 } // namespace noctalia::theme

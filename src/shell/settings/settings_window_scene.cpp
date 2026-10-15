@@ -1889,7 +1889,7 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
     auto it = std::ranges::find_if(m_settingsRegistry, [](const settings::SettingEntry& e) {
       return e.section == settings::SettingsSection::Appearance
           && e.group == "theme"
-          && e.path == std::vector<std::string>{"theme", "wallpaper_scheme"};
+          && e.path == std::vector<std::string>{"theme", "terminal_scheme"};
     });
     if (it != m_settingsRegistry.end()) {
       ++it;

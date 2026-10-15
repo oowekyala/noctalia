@@ -1639,6 +1639,10 @@
         "pure-black-dark": {
           "label": "Noir Pur"
         },
+        "terminal-scheme": {
+          "description": "Choisir comment les couleurs du terminal sont générées à partir du fond d'écran",
+          "label": "Palette du terminal"
+        },
         "theme-mode": {
           "description": "Choisir sombre, clair ou automatique selon l’heure de la journée",
           "label": "Mode du thème"
@@ -3360,6 +3364,10 @@
       "muted": "Muted",
       "soft": "Soft",
       "vibrant": "Vibrant"
+    },
+    "terminal-scheme": {
+      "default": "Par défaut",
+      "pinned-hues": "Teintes fixes"
     }
   },
   "time": {
