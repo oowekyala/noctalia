@@ -20,6 +20,16 @@ namespace wallpaper_polarity {
     // Mean lightness above which an image counts as light.
     constexpr float kLightThreshold = 0.5F;
     constexpr int kSampleSide = 256;
+    // In toe lightness: tones this close to the image's darkest count as its darkest (about 4/255 of sRGB
+    // noise over black).
+    constexpr float kBlackPoint = 0.03F;
+    // In toe lightness: below this, chroma fades out (it can't be seen there, and in a compressed image it is
+    // mostly noise).
+    constexpr float kChromaFloor = 0.1F;
+    // Okhsl's toe constants.
+    constexpr float kToeK1 = 0.206F;
+    constexpr float kToeK2 = 0.03F;
+    constexpr float kToeK3 = (1.0F + kToeK1) / (1.0F + kToeK2);
 
     struct Lab {
       double L;
@@ -142,16 +152,27 @@ namespace wallpaper_polarity {
     return {.light = mean > kLightThreshold, .darkest = darkest, .lightest = lightest};
   }
 
+  float toe(float lightness) {
+    const float x = std::max(lightness, 0.0F);
+    const float a = kToeK3 * x - kToeK1;
+    return 0.5F * (a + std::sqrt(a * a + 4.0F * kToeK2 * kToeK3 * x));
+  }
+
+  float toeInverse(float lightness) {
+    return (lightness * lightness + kToeK1 * lightness) / (kToeK3 * (lightness + kToeK2));
+  }
+
   Transform transformFor(const Analysis& analysis, bool lightMode) {
     if (analysis.light == lightMode) {
       return {};
     }
+    const float sourceLow = toe(analysis.darkest) + kBlackPoint;
     return {
         .invert = true,
-        .sourceLow = analysis.darkest,
-        .sourceHigh = analysis.lightest,
-        .targetLow = lightMode ? kLightLow : kDarkLow,
-        .targetHigh = lightMode ? kLightHigh : kDarkHigh,
+        .sourceLow = sourceLow,
+        .sourceHigh = std::max(toe(analysis.lightest), sourceLow + 1e-3F),
+        .targetLow = toe(lightMode ? kLightLow : kDarkLow),
+        .targetHigh = toe(lightMode ? kLightHigh : kDarkHigh),
     };
   }
 
@@ -200,9 +221,15 @@ namespace wallpaper_polarity {
     const float range = std::max(transform.sourceHigh - transform.sourceLow, 1e-3F);
     for (std::size_t i = 0; i < pixelCount; ++i) {
       std::uint8_t* p = pixels + i * static_cast<std::size_t>(channels);
-      const Lab lab = pixelLab(p);
-      const double t = std::clamp((lab.L - transform.sourceLow) / range, 0.0, 1.0);
-      const double L = transform.targetHigh - (transform.targetHigh - transform.targetLow) * t;
+      Lab lab = pixelLab(p);
+      const float sourceToe = toe(static_cast<float>(lab.L));
+      const double t = std::clamp((sourceToe - transform.sourceLow) / range, 0.0F, 1.0F);
+      const double L =
+          toeInverse(static_cast<float>(transform.targetHigh - (transform.targetHigh - transform.targetLow) * t));
+      const float fade = std::clamp(sourceToe / kChromaFloor, 0.0F, 1.0F);
+      const double chromaKept = fade * fade * (3.0F - 2.0F * fade);
+      lab.a *= chromaKept;
+      lab.b *= chromaKept;
       const double chroma = std::hypot(lab.a, lab.b);
       double hue = std::atan2(lab.b, lab.a) * 180.0 / std::numbers::pi;
       if (hue < 0.0) {

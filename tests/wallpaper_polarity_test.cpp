@@ -67,16 +67,26 @@ namespace {
     const Analysis dark{.light = false, .darkest = 0.1F, .lightest = 0.4F};
     ok = expect(!transformFor(dark, false).invert, "a dark image stays in dark mode") && ok;
     const Transform t = transformFor(dark, true);
-    ok =
-        expect(t.invert && t.sourceLow == 0.1F && t.sourceHigh == 0.4F, "a dark image is inverted in light mode") && ok;
-    ok = expect(t.targetLow > 0.4F && t.targetHigh > 0.9F, "light mode's target range is light") && ok;
+    ok = expect(t.invert, "a dark image is inverted in light mode") && ok;
+    ok = expect(
+             std::abs(t.sourceLow - (toe(0.1F) + 0.03F)) < 1e-5F && std::abs(t.sourceHigh - toe(0.4F)) < 1e-5F,
+             "the source range is the image's, in toe lightness, raised by the black point"
+         )
+        && ok;
+    ok = expect(
+             std::abs(toeInverse(t.targetLow) - 0.42F) < 1e-4F && toeInverse(t.targetHigh) > 0.95F,
+             "light mode's target range is light"
+         )
+        && ok;
+    ok = expect(std::abs(toeInverse(toe(0.37F)) - 0.37F) < 1e-5F, "toeInverse undoes toe") && ok;
     const Analysis light{.light = true, .darkest = 0.6F, .lightest = 0.95F};
     ok = expect(transformFor(light, false).invert, "a light image is inverted in dark mode") && ok;
     ok = expect(!transformFor(light, true).invert, "a light image stays in light mode") && ok;
     return ok;
   }
 
-  // Reference values from the Python script this is ported from (wallpaper-polarity in the author's dotfiles).
+  // Reference values from a NumPy prototype of the same transform (the author's wallpaper-polarity script, with
+  // the toe lightness, black point and near-black chroma fade).
   bool checkMatchesReference() {
     using namespace wallpaper_polarity;
     bool ok = true;
@@ -96,10 +106,10 @@ namespace {
     const std::array<Case, 2> cases{{
         {true,
          {.light = false, .darkest = 0.15F, .lightest = 0.45F},
-         {{{184, 185, 206}, {147, 0, 35}, {0, 94, 27}, {34, 78, 220}, {84, 77, 57}, {77, 77, 77}}}},
+         {{{206, 207, 229}, {147, 0, 35}, {0, 94, 27}, {39, 84, 227}, {84, 77, 57}, {77, 77, 77}}}},
         {false,
          {.light = true, .darkest = 0.55F, .lightest = 0.95F},
-         {{{162, 162, 183}, {230, 70, 85}, {81, 174, 93}, {121, 161, 253}, {11, 7, 0}, {141, 141, 141}}}},
+         {{{162, 162, 183}, {246, 85, 97}, {94, 187, 105}, {121, 161, 253}, {17, 11, 0}, {154, 154, 154}}}},
     }};
     for (const Case& c : cases) {
       std::vector<std::uint8_t> pixels;
@@ -119,6 +129,30 @@ namespace {
                )
               && ok;
         }
+      }
+    }
+    return ok;
+  }
+
+  // The compression noise of a "black" background (values up to a few 255ths, some of them tinted) turns into the
+  // same white as true black, without a tint, instead of visible grey and colored blocks.
+  bool checkNoiseOverBlack() {
+    using namespace wallpaper_polarity;
+    const std::array<std::array<std::uint8_t, 3>, 5> noise{{{0, 0, 0}, {1, 1, 1}, {2, 0, 1}, {0, 0, 2}, {4, 4, 4}}};
+    std::vector<std::uint8_t> pixels;
+    for (const auto& p : noise) {
+      pixels.insert(pixels.end(), p.begin(), p.end());
+    }
+    apply(pixels.data(), noise.size(), 3, transformFor({.light = false, .darkest = 0.0F, .lightest = 0.33F}, true));
+    bool ok = true;
+    for (std::size_t i = 0; i < noise.size(); ++i) {
+      for (std::size_t ch = 0; ch < 3; ++ch) {
+        const int value = pixels[i * 3 + ch];
+        ok = expect(
+                 value >= 245 && std::abs(value - pixels[ch]) <= 2,
+                 std::format("noise pixel {} channel {}: {}", i, ch, value)
+             )
+            && ok;
       }
     }
     return ok;
@@ -162,6 +196,7 @@ int main() {
   ok = checkAnalysis() && ok;
   ok = checkTransform() && ok;
   ok = checkMatchesReference() && ok;
+  ok = checkNoiseOverBlack() && ok;
   ok = checkTable() && ok;
   ok = checkCache() && ok;
   return ok ? 0 : 1;

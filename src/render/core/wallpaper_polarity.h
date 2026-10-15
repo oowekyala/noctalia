@@ -12,7 +12,9 @@
 // the image's own range onto a range suited to the mode, darkest tones becoming the
 // lightest and the reverse; chroma is kept where sRGB can show it at the new
 // lightness, and reduced only as far as needed where it can't (vivid deep blues have
-// no light counterpart of the same saturation).
+// no light counterpart of the same saturation). Lightness is compared in toe lightness, with
+// a small black point, and near-black pixels lose their chroma, so the noise of a compressed
+// black background doesn't turn into visible blocks once it is white.
 //
 // The wallpaper shader does the inversion on screen; the theme service does it on the
 // small buffer it generates the palette from, so the palette matches what is shown.
@@ -27,7 +29,8 @@ namespace wallpaper_polarity {
     bool operator==(const Analysis&) const = default;
   };
 
-  // How a layer is drawn: inverted or not, and if so from which range onto which.
+  // How a layer is drawn: inverted or not, and if so from which range onto which. The ranges are in
+  // toe lightness (toe() below), the source one already raised by the black point.
   struct Transform {
     bool invert = false;
     float sourceLow = 0.0F;
@@ -37,6 +40,12 @@ namespace wallpaper_polarity {
 
     bool operator==(const Transform&) const = default;
   };
+
+  // Okhsl's toe: OKLab lightness mapped closer to CIELAB's, which OKLab overstates near black (sRGB 1/255
+  // already has lightness 0.07). The inversion runs on it, so the compression noise of a "black" background
+  // stays invisible once that background is white.
+  [[nodiscard]] float toe(float lightness);
+  [[nodiscard]] float toeInverse(float lightness);
 
   // Analyzes an 8-bit image (3 or 4 channels, sRGB) from an evenly spaced sample of at
   // most 256x256 of its pixels.

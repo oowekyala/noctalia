@@ -48,7 +48,7 @@ uniform float u_imageWidth2;
 uniform float u_imageHeight2;
 uniform vec4 u_fillColor;
 // Lightness inversion per source (wallpaper_polarity.h): x inverts when 1, y and z are the
-// image's lightness range; the target is the range it is mapped onto, reversed.
+// image's toe-lightness range; the target is the range it is mapped onto, reversed.
 uniform vec4 u_polarity1;
 uniform vec4 u_polarity2;
 uniform vec2 u_target1;
@@ -110,24 +110,38 @@ vec3 oklabToLinear(vec3 lab) {
         -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
 }
 
-// The image's lightness stretched from its own range onto the target one, reversed, with the
-// chroma it had where sRGB can show it at the new lightness, and the most it can show there
-// (same hue) where it can't.
+// Okhsl's toe: OKLab lightness closer to CIELAB's, which OKLab overstates near black.
+float toe(float x) {
+    float k3 = 1.206 / 1.03;
+    float a = k3 * x - 0.206;
+    return 0.5 * (a + sqrt(a * a + 4.0 * 0.03 * k3 * x));
+}
+
+float toeInverse(float x) {
+    return (x * x + 0.206 * x) / ((1.206 / 1.03) * (x + 0.03));
+}
+
+// The image's toe lightness stretched from its own range (raised by a black point) onto the
+// target one, reversed, with the chroma it had where sRGB can show it at the new lightness, and
+// the most it can show there (same hue) where it can't; near-black pixels lose their chroma.
+// Same as wallpaper_polarity::apply() on the CPU.
 vec4 applyPolarity(vec4 color, vec4 polarity, vec2 target) {
     if (polarity.x < 0.5) {
         return color;
     }
     vec3 lab = linearToOklab(srgbToLinear(color.rgb));
-    float t = clamp((lab.x - polarity.y) / max(polarity.z - polarity.y, 0.001), 0.0, 1.0);
-    float lightness = target.y - (target.y - target.x) * t;
-    float chroma = length(lab.yz);
-    float hue = fract(atan(lab.z, lab.y) / 6.28318530718 + 1.0);
+    float sourceToe = toe(max(lab.x, 0.0));
+    float t = clamp((sourceToe - polarity.y) / max(polarity.z - polarity.y, 0.001), 0.0, 1.0);
+    float lightness = toeInverse(target.y - (target.y - target.x) * t);
+    vec2 ab = lab.yz * smoothstep(0.0, 0.1, sourceToe);
+    float chroma = length(ab);
+    float hue = fract(atan(ab.y, ab.x) / 6.28318530718 + 1.0);
     // Nearest table entry, as the CPU side rounds (wallpaper_polarity.cpp).
     float column = mod(floor(hue * 360.0 + 0.5), 360.0);
     float row = floor(lightness * 255.0 + 0.5);
     float maxChroma = texture2D(u_chromaTable, vec2((column + 0.5) / 360.0, (row + 0.5) / 256.0)).r * 0.4;
     float scale = chroma > maxChroma ? maxChroma / max(chroma, 1e-6) : 1.0;
-    return vec4(linearToSrgb(oklabToLinear(vec3(lightness, lab.yz * scale))), color.a);
+    return vec4(linearToSrgb(oklabToLinear(vec3(lightness, ab * scale))), color.a);
 }
 
 vec4 sampleSource(
