@@ -28,6 +28,8 @@ public:
   [[nodiscard]] const Color& fillColor() const noexcept { return m_fillColor; }
   [[nodiscard]] const TransitionParams& transitionParams() const noexcept { return m_params; }
   [[nodiscard]] const WallpaperSpanParams& spanParams() const noexcept { return m_span; }
+  [[nodiscard]] const wallpaper_polarity::Transform& polarity1() const noexcept { return m_polarity1; }
+  [[nodiscard]] const wallpaper_polarity::Transform& polarity2() const noexcept { return m_polarity2; }
 
   void setTextures(
       TextureId texture1, TextureId texture2, float imageWidth1, float imageHeight1, float imageWidth2,
@@ -105,6 +107,16 @@ public:
     markPaintDirty();
   }
 
+  // How each source is drawn: inverted or not (wallpaper_polarity.h).
+  void setPolarity(const wallpaper_polarity::Transform& polarity1, const wallpaper_polarity::Transform& polarity2) {
+    if (m_polarity1 == polarity1 && m_polarity2 == polarity2) {
+      return;
+    }
+    m_polarity1 = polarity1;
+    m_polarity2 = polarity2;
+    markPaintDirty();
+  }
+
   void setSpan(const WallpaperSpanParams& span) {
     if (m_span == span) {
       return;
@@ -130,4 +142,6 @@ private:
   Color m_fillColor = rgba(0.0F, 0.0F, 0.0F, 1.0F);
   TransitionParams m_params;
   WallpaperSpanParams m_span;
+  wallpaper_polarity::Transform m_polarity1;
+  wallpaper_polarity::Transform m_polarity2;
 };

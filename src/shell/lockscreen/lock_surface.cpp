@@ -10,6 +10,7 @@
 #include "render/core/blur_cache.h"
 #include "render/core/render_styles.h"
 #include "render/core/shared_texture_cache.h"
+#include "render/core/wallpaper_polarity.h"
 #include "render/render_context.h"
 #include "render/scene/wallpaper_node.h"
 #include "shell/lockscreen/lockscreen_login_box.h"
@@ -1931,6 +1932,7 @@ void LockSurface::applyWallpaperTexture() {
         WallpaperSourceKind::Color, {}, color, WallpaperSourceKind::Image, {}, rgba(0.0F, 0.0F, 0.0F, 1.0F), 0.0F, 0.0F,
         0.0F, 0.0F
     );
+    m_wallpaper->setPolarity({}, {});
     m_wallpaper->setTransition(WallpaperTransition::Fade, 0.0F, TransitionParams{});
     m_wallpaper->setFillMode(m_wallpaperFillMode);
     m_wallpaper->setFillColor(m_wallpaperFillColor);
@@ -1990,6 +1992,15 @@ void LockSurface::applyWallpaperTexture() {
           textureToDisplay.id, {}, static_cast<float>(textureToDisplay.width),
           static_cast<float>(textureToDisplay.height), 0.0F, 0.0F
       );
+      // Shown as the wallpaper surface shows it (wallpaper.match_theme_mode). The shell's light/dark mode stands in for
+      // the theme mode the wallpaper follows: they only differ when the shell mode is pinned.
+      wallpaper_polarity::Transform polarity;
+      if (m_config != nullptr && m_config->config().wallpaper.matchThemeMode) {
+        if (const auto analysis = wallpaper_polarity::cached(m_shownWallpaperPath)) {
+          polarity = wallpaper_polarity::transformFor(*analysis, isResolvedLightTheme());
+        }
+      }
+      m_wallpaper->setPolarity(polarity, {});
       m_wallpaper->setTransition(WallpaperTransition::Fade, 0.0F, TransitionParams{});
       m_wallpaper->setFillMode(m_wallpaperFillMode);
       m_wallpaper->setFillColor(m_wallpaperFillColor);
@@ -2000,6 +2011,7 @@ void LockSurface::applyWallpaperTexture() {
     m_shownWallpaperPath.clear();
     m_pendingWallpaperPath.clear();
     m_wallpaper->setTextures({}, {}, 0.0F, 0.0F, 0.0F, 0.0F);
+    m_wallpaper->setPolarity({}, {});
   } else {
     loaded = false;
   }
@@ -2087,6 +2099,8 @@ void LockSurface::applyBlurredDesktopTexture() {
       m_blurredDesktopTexture.id, {}, static_cast<float>(m_blurredDesktopTexture.width),
       static_cast<float>(m_blurredDesktopTexture.height), 0.0F, 0.0F
   );
+  // A capture of the screen, so already as the wallpaper was shown.
+  m_wallpaper->setPolarity({}, {});
   m_wallpaper->setTransition(WallpaperTransition::Fade, 0.0F, TransitionParams{});
   m_wallpaper->setFillMode(m_wallpaperFillMode);
   m_wallpaper->setFillColor(rgba(0.0F, 0.0F, 0.0F, 0.0F));

@@ -4,6 +4,7 @@
 #include "render/animation/animation_manager.h"
 #include "render/core/color.h"
 #include "render/core/shared_texture_cache.h"
+#include "render/core/wallpaper_polarity.h"
 #include "render/core/wallpaper_types.h"
 #include "render/scene/node.h"
 #include "render/scene/wallpaper_node.h"
@@ -11,6 +12,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 class Box;
@@ -46,6 +48,13 @@ struct WallpaperInstance {
   // Image still decoding; it starts the change to loadingPath once its texture is uploaded.
   SharedTextureCache::Lease loadingImage;
   std::string loadingPath;
+
+  // Lightness analysis of the shown and incoming images (wallpaper_polarity.h), and how
+  // each is drawn in the current theme mode.
+  std::optional<wallpaper_polarity::Analysis> currentAnalysis;
+  std::optional<wallpaper_polarity::Analysis> nextAnalysis;
+  wallpaper_polarity::Transform currentPolarity;
+  wallpaper_polarity::Transform nextPolarity;
 
   // Transition state
   float transitionTime = 0.0F;

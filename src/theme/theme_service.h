@@ -68,6 +68,8 @@ namespace noctalia::theme {
     struct WallpaperPaletteKey {
       std::string path;
       std::string schemeName;
+      // wallpaper.match_theme_mode: each mode's palette comes from the image as shown in that mode.
+      bool matchThemeMode = false;
       Scheme scheme = Scheme::Content;
       std::int64_t mtimeNs = 0;
 

@@ -2,6 +2,7 @@
 
 #include "config/config_types.h"
 #include "render/core/shared_texture_cache.h"
+#include "render/core/wallpaper_polarity.h"
 #include "render/core/wallpaper_types.h"
 #include "shell/wallpaper/wallpaper_shuffle_state.h"
 #include "ui/signal.h"
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -126,6 +128,12 @@ private:
   void discardPendingWallpaper(WallpaperInstance& instance);
   void runQueuedWallpaper(WallpaperInstance& instance);
   void updateRendererState(WallpaperInstance& instance);
+  // The transform an image with this analysis is drawn with in the current theme mode.
+  [[nodiscard]] wallpaper_polarity::Transform
+  polarityFor(const std::optional<wallpaper_polarity::Analysis>& analysis) const;
+  // After a theme mode change (or the setting's): crossfades the shown image into its
+  // other polarity when it no longer suits the mode.
+  void refreshPolarity(WallpaperInstance& instance);
   void releaseInstanceTextures(WallpaperInstance& inst);
 
   WaylandConnection* m_wayland = nullptr;

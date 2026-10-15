@@ -389,6 +389,7 @@ bool Wallpaper::initialize(
   m_config->addReloadCallback([this]() { reload(); }, "wallpaper");
   m_paletteConn = paletteChanged().connect([this] {
     for (auto& inst : m_instances) {
+      refreshPolarity(*inst);
       updateRendererState(*inst);
       if (inst->surface != nullptr) {
         inst->surface->requestRedraw();
@@ -451,6 +452,7 @@ void Wallpaper::reload() {
   // changes that take effect immediately without a texture reload.
   for (auto& inst : m_instances) {
     refreshTextureCoverage(*inst);
+    refreshPolarity(*inst);
     updateRendererState(*inst);
     inst->surface->requestRedraw();
   }
@@ -1360,6 +1362,12 @@ void Wallpaper::beginWallpaperChange(
     WallpaperInstance& instance, const std::string& path, WallpaperSourceKind kind, SharedTextureCache::Lease image,
     const Color& color
 ) {
+  // Measured by the texture cache when it decoded the image, before the texture became valid.
+  std::optional<wallpaper_polarity::Analysis> analysis;
+  if (kind == WallpaperSourceKind::Image) {
+    analysis = wallpaper_polarity::cached(path);
+  }
+
   if (instance.currentPath.empty()) {
     const auto& wpConfig = m_config->config().wallpaper;
     if (wpConfig.transitionOnStartup && !wpConfig.transitions.empty()) {
@@ -1369,6 +1377,8 @@ void Wallpaper::beginWallpaperChange(
       instance.nextSourceKind = kind;
       instance.nextImage = std::move(image);
       instance.nextColor = color;
+      instance.nextAnalysis = analysis;
+      instance.nextPolarity = polarityFor(analysis);
       instance.pendingPath = path;
       startTransition(instance);
       return;
@@ -1377,6 +1387,8 @@ void Wallpaper::beginWallpaperChange(
     instance.currentSourceKind = kind;
     instance.currentImage = std::move(image);
     instance.currentColor = color;
+    instance.currentAnalysis = analysis;
+    instance.currentPolarity = polarityFor(analysis);
     instance.currentPath = path;
     instance.pendingPath.clear();
     instance.queuedPath.clear();
@@ -1391,6 +1403,8 @@ void Wallpaper::beginWallpaperChange(
   instance.nextSourceKind = kind;
   instance.nextImage = std::move(image);
   instance.nextColor = color;
+  instance.nextAnalysis = analysis;
+  instance.nextPolarity = polarityFor(analysis);
   instance.pendingPath = path;
   startTransition(instance);
 }
@@ -1475,6 +1489,8 @@ void Wallpaper::startTransitionAnimation(
 
 void Wallpaper::finishTransition(WallpaperInstance& instance) {
   const bool displayedWallpaperChanged = instance.transitionDirection == WallpaperTransitionDirection::Forward;
+  // A crossfade between the polarities of the shown image (refreshPolarity) leaves the wallpaper as it was.
+  const bool samePath = instance.pendingPath == instance.currentPath;
   instance.transitionAnimId = 0;
 
   if (displayedWallpaperChanged) {
@@ -1489,7 +1505,7 @@ void Wallpaper::finishTransition(WallpaperInstance& instance) {
   updateRendererState(instance);
   instance.surface->requestRedraw();
 
-  if (displayedWallpaperChanged) {
+  if (displayedWallpaperChanged && !samePath) {
     m_changed.emit();
   }
 
@@ -1501,12 +1517,16 @@ void Wallpaper::promotePendingWallpaper(WallpaperInstance& instance) {
   instance.currentImage = std::move(instance.nextImage);
   instance.currentColor = std::exchange(instance.nextColor, defaultWallpaperColor());
   instance.currentPath = std::exchange(instance.pendingPath, std::string{});
+  instance.currentAnalysis = std::exchange(instance.nextAnalysis, std::nullopt);
+  instance.currentPolarity = std::exchange(instance.nextPolarity, {});
 }
 
 void Wallpaper::discardPendingWallpaper(WallpaperInstance& instance) {
   instance.nextImage.reset();
   instance.nextSourceKind = WallpaperSourceKind::Image;
   instance.nextColor = defaultWallpaperColor();
+  instance.nextAnalysis.reset();
+  instance.nextPolarity = {};
   instance.pendingPath.clear();
 }
 
@@ -1516,6 +1536,55 @@ void Wallpaper::runQueuedWallpaper(WallpaperInstance& instance) {
   if (!queuedPath.empty() && queuedPath != instance.currentPath) {
     loadWallpaper(instance, queuedPath);
   }
+}
+
+wallpaper_polarity::Transform
+Wallpaper::polarityFor(const std::optional<wallpaper_polarity::Analysis>& analysis) const {
+  if (!analysis.has_value() || m_config == nullptr || !m_config->config().wallpaper.matchThemeMode) {
+    return {};
+  }
+  return wallpaper_polarity::transformFor(*analysis, directoryThemeMode() == ThemeMode::Light);
+}
+
+void Wallpaper::refreshPolarity(WallpaperInstance& instance) {
+  const wallpaper_polarity::Transform wanted = polarityFor(instance.currentAnalysis);
+  if (instance.transitioning) {
+    // Mid-change, the outgoing image keeps how it is drawn (the palette signal fires on every frame of the palette's
+    // own animation); the incoming one follows the mode, and is checked again once it is shown.
+    instance.nextPolarity = polarityFor(instance.nextAnalysis);
+    return;
+  }
+  if (wanted == instance.currentPolarity) {
+    return;
+  }
+
+  // The same image in its other polarity, crossfaded: the texture is already resident, so the lease is valid now.
+  SharedTextureCache::Lease image;
+  if (instance.currentSourceKind == WallpaperSourceKind::Image && m_textureCache != nullptr) {
+    image = m_textureCache->acquire(
+        SharedTextureRequest{.path = instance.currentPath, .coverage = textureCoverage(instance)},
+        m_renderContext != nullptr ? &m_renderContext->backend() : nullptr,
+        [this, inst = &instance]() { onImageChanged(*inst); }
+    );
+  }
+  const auto& wpConfig = m_config->config().wallpaper;
+  if (image.empty()
+      || !image.texture().valid()
+      || wpConfig.transitionDurationMs <= 0.0F
+      || instance.surface == nullptr) {
+    instance.currentPolarity = wanted;
+    return;
+  }
+
+  instance.nextSourceKind = WallpaperSourceKind::Image;
+  instance.nextImage = std::move(image);
+  instance.nextColor = instance.currentColor;
+  instance.nextAnalysis = instance.currentAnalysis;
+  instance.nextPolarity = wanted;
+  instance.pendingPath = instance.currentPath;
+  instance.activeTransition = WallpaperTransition::Fade;
+  instance.transitionParams = TransitionParams{};
+  startTransitionAnimation(instance, 0.0F, WallpaperTransitionDirection::Forward);
 }
 
 void Wallpaper::updateRendererState(WallpaperInstance& instance) {
@@ -1565,6 +1634,7 @@ void Wallpaper::updateRendererState(WallpaperInstance& instance) {
       instance.nextColor, static_cast<float>(currentTexture.width), static_cast<float>(currentTexture.height),
       static_cast<float>(nextTexture.width), static_cast<float>(nextTexture.height)
   );
+  wallpaperNode->setPolarity(instance.currentPolarity, instance.nextPolarity);
   wallpaperNode->setTransition(
       instance.activeTransition, transitionProgressForTime(instance.transitionTime), instance.transitionParams
   );

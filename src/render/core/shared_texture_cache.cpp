@@ -5,6 +5,7 @@
 #include "render/core/image_file_loader.h"
 #include "render/core/image_source_log.h"
 #include "render/core/texture_manager.h"
+#include "render/core/wallpaper_polarity.h"
 #include "render/gl_shared_context.h"
 
 #include <algorithm>
@@ -522,6 +523,13 @@ void SharedTextureCache::workerLoop() {
     }
     // Averaging fully opaque pixels stays fully opaque, so the source answer holds for every reduction.
     const bool opaque = !alphaMask && allOpaque(loaded->rgba);
+    // Measured here, off the main thread and before the texture is announced, so whoever shows the image can tell
+    // whether it suits the theme mode (wallpaper_polarity.h).
+    if (!alphaMask && !wallpaper_polarity::cached(path).has_value()) {
+      (void)wallpaper_polarity::remember(
+          path, wallpaper_polarity::analyze(loaded->rgba.data(), sourceWidth, sourceHeight, 4)
+      );
+    }
 
     // Smallest reduction first, so each result is copied out before the buffer is halved further.
     std::ranges::sort(batch, {}, [sourceWidth, sourceHeight](const SharedTextureRequest& request) {

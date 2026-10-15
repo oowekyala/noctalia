@@ -539,6 +539,9 @@ struct WallpaperConfig {
   float transitionDurationMs = 1500.0F;
   float edgeSmoothness = 0.3F;
   bool transitionOnStartup = false;
+  // Show a wallpaper that doesn't suit the theme mode with its lightness inverted
+  // (render/core/wallpaper_polarity.h), and generate the palette from what is shown.
+  bool matchThemeMode = false;
   std::string directory;      // empty = XDG_PICTURES_DIR
   std::string directoryLight; // empty = directory
   std::string directoryDark;  // empty = directory

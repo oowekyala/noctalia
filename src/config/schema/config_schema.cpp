@@ -1711,6 +1711,7 @@ namespace noctalia::config::schema {
         field(&WallpaperConfig::transitionDurationMs, "transition_duration", kWallpaperTransitionDurationRange),
         field(&WallpaperConfig::edgeSmoothness, "edge_smoothness", kUnitRange),
         field(&WallpaperConfig::transitionOnStartup, "transition_on_startup"),
+        field(&WallpaperConfig::matchThemeMode, "match_theme_mode"),
         pathStringField(&WallpaperConfig::directory, "directory"),
         pathStringField(&WallpaperConfig::directoryLight, "directory_light"),
         pathStringField(&WallpaperConfig::directoryDark, "directory_dark"),
