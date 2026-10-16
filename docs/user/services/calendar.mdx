@@ -41,6 +41,9 @@ enabled                = true
 dedupe_events          = false   # merge an event that appears in more than one calendar into a single entry
 dedupe_ignore_patterns = []      # regexes stripped from a title before events are compared
 refresh_minutes        = 15
+sync_days_before       = 365     # days of past events synced
+sync_days_after        = 365     # days of upcoming events synced
+request_timeout_seconds = 60     # how long each sync request may take
 event_date_format      = "%A %e %B"
 event_time_format      = "%H:%M"
 
@@ -85,6 +88,14 @@ color = "#FF0000"
 ```
 
 **Credentials are never stored in your config.** The `password_file` setting contains only a path; the file contents hold the CalDAV password.
+
+## Sync range
+
+Every account syncs the events from `sync_days_before` days ago to `sync_days_after` days ahead, a year each way by
+default. Months of the control-center calendar outside that range show no events. Each sync request may take
+`request_timeout_seconds`, a minute by default. A slow server needs a narrower range, which makes each sync smaller, or
+a longer timeout: a DavMail gateway, for example, converts every Exchange event as it sends it. The three settings are
+also in **Settings → Calendar → Sync**, with the advanced settings shown, beside the refresh interval.
 
 ## Sync status
 

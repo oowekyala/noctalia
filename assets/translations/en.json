@@ -1354,6 +1354,7 @@
         "built-in": "Built-In",
         "calendar-accounts": "Accounts",
         "calendar-reminders": "Reminders",
+        "calendar-sync": "Sync",
         "capsules": "Capsules",
         "clipboard": "Clipboard",
         "community": "Community",
@@ -2959,6 +2960,18 @@
         "calendar-refresh-interval": {
           "description": "How often to sync calendar events (minutes)",
           "label": "Refresh Interval"
+        },
+        "calendar-request-timeout": {
+          "description": "How long each sync request may take before it is abandoned (seconds)",
+          "label": "Request Timeout"
+        },
+        "calendar-sync-days-after": {
+          "description": "How many days of upcoming events to sync",
+          "label": "Days Ahead"
+        },
+        "calendar-sync-days-before": {
+          "description": "How many days of past events to sync",
+          "label": "Days Back"
         },
         "calendar-reminder-lead": {
           "description": "How far ahead to notify for events that set no reminder of their own.",

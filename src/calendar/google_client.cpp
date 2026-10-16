@@ -177,7 +177,8 @@ namespace calendar {
 
   void GoogleClient::fetchEvents(
       const std::string& accessToken, std::chrono::system_clock::time_point start,
-      std::chrono::system_clock::time_point end, std::function<void(SyncFailure, std::vector<CalendarEvent>)> cb
+      std::chrono::system_clock::time_point end, long timeoutSeconds,
+      std::function<void(SyncFailure, std::vector<CalendarEvent>)> cb
   ) {
     const std::string bearer = "Authorization: Bearer " + accessToken;
 
@@ -185,9 +186,10 @@ namespace calendar {
     listReq.method = "GET";
     listReq.url = "https://www.googleapis.com/calendar/v3/users/me/calendarList";
     listReq.followRedirects = true;
+    listReq.timeoutSeconds = timeoutSeconds;
     listReq.headers = {bearer};
 
-    m_http.request(std::move(listReq), [this, bearer, start, end, cb = std::move(cb)](HttpResponse resp) mutable {
+    auto onList = [this, bearer, start, end, timeoutSeconds, cb = std::move(cb)](HttpResponse resp) mutable {
       if (!resp.transportOk || resp.status != 200) {
         if (resp.status != 401) {
           kLog.warn("calendarList failed http={}", resp.status);
@@ -234,6 +236,7 @@ namespace calendar {
         HttpRequest req;
         req.method = "GET";
         req.followRedirects = true;
+        req.timeoutSeconds = timeoutSeconds;
         req.url = "https://www.googleapis.com/calendar/v3/calendars/"
             + uri::encodeComponent(meta.id)
             + "/events?singleEvents=true&orderBy=startTime&maxResults=2500&timeMin="
@@ -260,7 +263,8 @@ namespace calendar {
           }
         });
       }
-    });
+    };
+    m_http.request(std::move(listReq), std::move(onList));
   }
 
 } // namespace calendar

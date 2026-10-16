@@ -42,9 +42,6 @@ namespace {
   constexpr const char* kCalendarSyncOwner = "calendar_sync";
   constexpr const char* kICloudCalDavServerUrl = "https://caldav.icloud.com/";
   constexpr auto kConnectPollInterval = std::chrono::seconds{2};
-  // Wide enough for month navigation in the control-center calendar (~1 year each way).
-  constexpr auto kWindowBefore = std::chrono::hours{24 * 365};
-  constexpr auto kWindowAfter = std::chrono::hours{24 * 365};
   constexpr std::size_t kMaxCacheBytes = 32U * 1024U * 1024U;
   // Ceiling on the events one vdir account may contribute. A vdir tree is arbitrary user data with no
   // server-side bound, so the read stops here rather than growing the snapshot without limit.
@@ -786,7 +783,7 @@ void CalendarService::fetchCalDav(const CalendarConfig::Account& account) {
         const bool allowRedirectAuth = account.provider == "icloud";
 
         calendar::discoverCalDavCollections(
-            m_httpClient, serverUrl, username, password, allowRedirectAuth,
+            m_httpClient, serverUrl, username, password, allowRedirectAuth, m_activeConfig.requestTimeoutSeconds,
             [this, accountId, username, password, accountColor, selectedCalendars, allowRedirectAuth,
              now](calendar::SyncFailure discoveryFailure, std::vector<calendar::CalDavCollection> collections) {
               if (discoveryFailure != calendar::SyncFailure::None) {
@@ -833,9 +830,10 @@ void CalendarService::fetchCalDav(const CalendarConfig::Account& account) {
                 caldav.password = password;
                 caldav.calendarName = collection.name;
                 caldav.color = accountColor.empty() ? collection.color : accountColor;
+                caldav.timeoutSeconds = m_activeConfig.requestTimeoutSeconds;
 
                 m_caldav.fetchEvents(
-                    caldav, now - kWindowBefore, now + kWindowAfter, allowRedirectAuth,
+                    caldav, syncWindowStart(now), syncWindowEnd(now), allowRedirectAuth,
                     [ctx](calendar::SyncFailure failure, std::vector<CalendarEvent> events) {
                       if (failure == calendar::SyncFailure::None) {
                         ctx->anyOk = true;
@@ -935,6 +933,7 @@ void CalendarService::fetchIcs(const CalendarConfig::Account& account) {
   HttpRequest req;
   req.url = url;
   req.followRedirects = true;
+  req.timeoutSeconds = m_activeConfig.requestTimeoutSeconds;
   req.headers.emplace_back("Accept: text/calendar, */*;q=0.5");
 
   m_httpClient.request(req, [this, accountId, displayName, colorHex](HttpResponse resp) {
@@ -946,7 +945,7 @@ void CalendarService::fetchIcs(const CalendarConfig::Account& account) {
 
     calendar::ICalParseControl control{};
     const auto now = std::chrono::system_clock::now();
-    auto result = calendar::parseICalEvents(resp.body, now - kWindowBefore, now + kWindowAfter, control);
+    auto result = calendar::parseICalEvents(resp.body, syncWindowStart(now), syncWindowEnd(now), control);
     for (auto& event : result.events) {
       event.calendarName = displayName;
       if (event.colorHex.empty() && !colorHex.empty()) {
@@ -1030,13 +1029,22 @@ void CalendarService::updateVdirWatches() {
   }
 }
 
+std::chrono::system_clock::time_point
+CalendarService::syncWindowStart(std::chrono::system_clock::time_point now) const {
+  return now - std::chrono::days{std::max<std::int32_t>(1, m_activeConfig.syncDaysBefore)};
+}
+
+std::chrono::system_clock::time_point CalendarService::syncWindowEnd(std::chrono::system_clock::time_point now) const {
+  return now + std::chrono::days{std::max<std::int32_t>(1, m_activeConfig.syncDaysAfter)};
+}
+
 void CalendarService::fetchVdir(const CalendarConfig::Account& account) {
   const std::filesystem::path rootPath =
       account.path.empty() ? calendar::defaultVdirPath() : std::filesystem::path(account.path);
 
   const auto now = std::chrono::system_clock::now();
-  const auto windowStart = now - kWindowBefore;
-  const auto windowEnd = now + kWindowAfter;
+  const auto windowStart = syncWindowStart(now);
+  const auto windowEnd = syncWindowEnd(now);
 
   const std::string accountId = account.id;
 
@@ -1153,7 +1161,7 @@ void CalendarService::googleFetchWithToken(
   setSyncPhase(accountId, AccountStatus::Phase::Downloading);
   const auto now = std::chrono::system_clock::now();
   m_google.fetchEvents(
-      accessToken, now - kWindowBefore, now + kWindowAfter,
+      accessToken, syncWindowStart(now), syncWindowEnd(now), m_activeConfig.requestTimeoutSeconds,
       [this, accountId, allowRefreshRetry](calendar::SyncFailure failure, std::vector<CalendarEvent> events) {
         if (failure == calendar::SyncFailure::Authentication && allowRefreshRetry) {
           refreshGoogleToken(accountId, [this, accountId](calendar::SyncFailure refreshFailure, std::string newToken) {

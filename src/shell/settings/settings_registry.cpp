@@ -3060,18 +3060,46 @@ namespace settings {
       e.visibleWhen = remindersOn;
       entries.push_back(std::move(e));
     }
-    // Sync cadence belongs with the accounts it drives; the account rows are injected right after it.
+    // How accounts sync, after the accounts themselves: the account rows are injected before this group.
     {
       auto e = makeEntry(
-          SettingsSection::Calendar, "calendar-accounts",
-          tr("settings.schema.services.calendar-refresh-interval.label"),
+          SettingsSection::Calendar, "calendar-sync", tr("settings.schema.services.calendar-refresh-interval.label"),
           tr("settings.schema.services.calendar-refresh-interval.description"), {"calendar", "refresh_minutes"},
           sliderFor(cfg.calendar.refreshMinutes, noctalia::config::schema::kRefreshMinutesRange, true), "calendar sync"
       );
       e.visibleWhen = calendarOn;
       entries.push_back(std::move(e));
     }
-
+    {
+      auto e = makeEntry(
+          SettingsSection::Calendar, "calendar-sync", tr("settings.schema.services.calendar-sync-days-before.label"),
+          tr("settings.schema.services.calendar-sync-days-before.description"), {"calendar", "sync_days_before"},
+          sliderFor(cfg.calendar.syncDaysBefore, noctalia::config::schema::kCalendarSyncDaysRange, true),
+          "calendar sync past days range", true
+      );
+      e.visibleWhen = calendarOn;
+      entries.push_back(std::move(e));
+    }
+    {
+      auto e = makeEntry(
+          SettingsSection::Calendar, "calendar-sync", tr("settings.schema.services.calendar-sync-days-after.label"),
+          tr("settings.schema.services.calendar-sync-days-after.description"), {"calendar", "sync_days_after"},
+          sliderFor(cfg.calendar.syncDaysAfter, noctalia::config::schema::kCalendarSyncDaysRange, true),
+          "calendar sync upcoming days range", true
+      );
+      e.visibleWhen = calendarOn;
+      entries.push_back(std::move(e));
+    }
+    {
+      auto e = makeEntry(
+          SettingsSection::Calendar, "calendar-sync", tr("settings.schema.services.calendar-request-timeout.label"),
+          tr("settings.schema.services.calendar-request-timeout.description"), {"calendar", "request_timeout_seconds"},
+          sliderFor(cfg.calendar.requestTimeoutSeconds, noctalia::config::schema::kCalendarRequestTimeoutRange, true),
+          "calendar sync request timeout slow server", true
+      );
+      e.visibleWhen = calendarOn;
+      entries.push_back(std::move(e));
+    }
     entries.push_back(makeEntry(
         SettingsSection::Services, "audio", tr("settings.schema.services.audio-overdrive.label"),
         tr("settings.schema.services.audio-overdrive.description"), {"audio", "enable_overdrive"},

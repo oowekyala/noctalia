@@ -25,6 +25,7 @@ struct HttpRequest {
                                   // keep-alive connection answers via the old path
   std::string basicUsername;
   std::string basicPassword;
+  long timeoutSeconds = 30; // whole transfer, connection included
 };
 
 struct HttpResponse {

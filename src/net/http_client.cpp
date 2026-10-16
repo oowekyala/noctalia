@@ -348,7 +348,7 @@ void HttpClient::request(HttpRequest req, ResponseCallback cb) {
 
   applyCommonOptions(easy);
   curl_easy_setopt(easy, CURLOPT_URL, stored.url.c_str());
-  curl_easy_setopt(easy, CURLOPT_TIMEOUT, 30L);
+  curl_easy_setopt(easy, CURLOPT_TIMEOUT, req.timeoutSeconds);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT, 10L);
   if (req.allowInsecureTls) {
     curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 0L);

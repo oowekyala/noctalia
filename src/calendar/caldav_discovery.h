@@ -24,7 +24,7 @@ namespace calendar {
   // discovery failed.
   void discoverCalDavCollections(
       HttpClient& http, const std::string& serverUrl, const std::string& username,
-      std::shared_ptr<const security::SecureBuffer> password, bool allowRedirectAuth,
+      std::shared_ptr<const security::SecureBuffer> password, bool allowRedirectAuth, long timeoutSeconds,
       std::function<void(SyncFailure failure, std::vector<CalDavCollection>)> cb
   );
 

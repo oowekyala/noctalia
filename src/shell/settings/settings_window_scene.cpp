@@ -1992,14 +1992,10 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
   }
 
   if (m_config != nullptr) {
+    // Before the Sync group, so that Accounts comes first.
     auto it = std::ranges::find_if(m_settingsRegistry, [](const settings::SettingEntry& e) {
-      return e.section == settings::SettingsSection::Calendar
-          && e.group == "calendar-accounts"
-          && e.path == std::vector<std::string>{"calendar", "refresh_minutes"};
+      return e.section == settings::SettingsSection::Calendar && e.group == "calendar-sync";
     });
-    if (it != m_settingsRegistry.end()) {
-      ++it;
-    }
     const settings::SettingVisibility calendarOn = [](const Config& c) { return c.calendar.enabled; };
     settings::SettingEntry addBtn{
         .section = settings::SettingsSection::Calendar,
