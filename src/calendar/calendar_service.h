@@ -5,6 +5,7 @@
 #include "calendar/calendar_types.h"
 #include "calendar/google_client.h"
 #include "calendar/google_oauth.h"
+#include "calendar/sync_failure.h"
 #include "config/config_types.h"
 #include "core/inotify/inotify.h"
 #include "security/storage_key_provider.h"
@@ -106,6 +107,11 @@ public:
     return m_credentials.refreshTokenLocked(accountId);
   }
   [[nodiscard]] bool hasMissingRefreshTokens() const { return m_credentials.anyRefreshTokenMissing(); }
+  // Why an account's sync is failing, once that is worth showing: a failure that a retry won't fix, or a
+  // transient one (calendar::transientSyncFailure) that happened twice in a row. Empty while it syncs.
+  [[nodiscard]] std::optional<calendar::SyncFailure> accountSyncFailure(const std::string& accountId) const;
+  // Changes whenever an account's shown failure does, so a view can refresh only then.
+  [[nodiscard]] std::uint64_t syncStatusRevision() const noexcept { return m_syncStatusRevision; }
   [[nodiscard]] CachePersistenceState cachePersistenceState() const noexcept { return m_cachePersistenceState; }
   [[nodiscard]] bool cacheMigrationPending() const noexcept { return m_cacheMigrationPending; }
   [[nodiscard]] bool hasEncryptedCache() const;
@@ -124,7 +130,11 @@ private:
   void onConfigReload();
   void notifyChanged();
   void startRefresh();
-  void accountDone(const std::string& accountId, bool ok, std::vector<CalendarEvent> events);
+  void accountDone(const std::string& accountId, calendar::SyncFailure failure, std::vector<CalendarEvent> events);
+  // Tracks the account's failures (calendar::SyncFailureStreak), and notifies once one starts being shown, or
+  // becomes another.
+  void recordSyncResult(const std::string& accountId, calendar::SyncFailure failure);
+  void notifySyncFailure(const CalendarConfig::Account& account, calendar::SyncFailure failure) const;
   void rebuildSnapshot();
   void scheduleNextRefresh();
 
@@ -136,7 +146,9 @@ private:
   void fetchVdir(const CalendarConfig::Account& account);
   void updateVdirWatches();
   void fetchGoogle(const CalendarConfig::Account& account);
-  void refreshGoogleToken(const std::string& accountId, std::function<void(bool ok, std::string accessToken)> cb);
+  void refreshGoogleToken(
+      const std::string& accountId, std::function<void(calendar::SyncFailure failure, std::string accessToken)> cb
+  );
   void googleFetchWithToken(const std::string& accountId, const std::string& accessToken, bool allowRefreshRetry);
   void pollConnect();
   void notifyGoogleConnectFailure(const std::string& body) const;
@@ -188,6 +200,8 @@ private:
   bool m_cacheMigrationPending = false;
   std::size_t m_pendingAccounts = 0;
   bool m_googleCredentialLockedNotificationShown = false;
+  std::map<std::string, calendar::SyncFailureStreak> m_syncStatus;
+  std::uint64_t m_syncStatusRevision = 0;
   ConnectFlow m_connect;
   calendar::CalDavClient m_caldav;
   Inotify m_vdirInotify;

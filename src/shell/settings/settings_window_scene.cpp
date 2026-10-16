@@ -2022,10 +2022,22 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
       const bool reconnectRequired = account.type == "google"
           && m_calendarService != nullptr
           && m_calendarService->googleAccountNeedsReconnect(account.id);
-      const std::string_view descriptionKey = credentialLocked
-          ? "settings.schema.services.calendar-edit.description-locked"
-          : reconnectRequired ? "settings.schema.services.calendar-edit.description-reconnect"
-                              : "settings.schema.services.calendar-edit.description";
+      // A failing sync is shown after the Google states, which say more. Its row keeps Edit, where most failures
+      // are fixed (even an unreachable server may be a mistyped address); the next scheduled sync retries.
+      const std::optional<calendar::SyncFailure> syncFailure =
+          credentialLocked || reconnectRequired || m_calendarService == nullptr
+          ? std::nullopt
+          : m_calendarService->accountSyncFailure(account.id);
+      const std::string subtitle = syncFailure.has_value()
+          ? i18n::tr(
+                "settings.schema.services.calendar-edit.description-sync-failed", "reason",
+                i18n::tr(calendar::syncFailureMessageKey(*syncFailure))
+            )
+          : i18n::tr(
+                credentialLocked        ? "settings.schema.services.calendar-edit.description-locked"
+                    : reconnectRequired ? "settings.schema.services.calendar-edit.description-reconnect"
+                                        : "settings.schema.services.calendar-edit.description"
+            );
       const std::string_view buttonKey = credentialLocked ? "settings.schema.services.calendar-edit.button-retry"
           : reconnectRequired                             ? "settings.schema.services.calendar-edit.button-reconnect"
                                                           : "settings.schema.services.calendar-edit.button";
@@ -2033,7 +2045,7 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
           .section = settings::SettingsSection::Calendar,
           .group = "calendar-accounts",
           .title = account.displayName.empty() ? account.id : account.displayName,
-          .subtitle = i18n::tr(descriptionKey),
+          .subtitle = subtitle,
           .path = {},
           .control =
               settings::ButtonSetting{

@@ -86,6 +86,17 @@ color = "#FF0000"
 
 **Credentials are never stored in your config.** The `password_file` setting contains only a path; the file contents hold the CalDAV password.
 
+## Sync failures
+
+When an account stops syncing, Noctalia sends one notification saying why: the server rejected the username or
+password, no calendar was found at the configured address, the server took too long to respond, and so on. The
+account's row in **Settings → Calendar → Accounts** shows the same reason until a sync succeeds; syncs keep being
+retried at the refresh interval, and the events last synced stay shown meanwhile.
+
+Failures that often clear on their own, such as an unreachable server, a timeout, a server error, or a locked keyring,
+are reported only when two syncs in a row fail, so a sync attempted before the network is up after login or resume
+doesn't raise an alarm. Each failure is notified once, until it changes or the account syncs again.
+
 ## Merging duplicate events
 
 `dedupe_events` (also **Settings → Calendar → General → Merge Duplicate Events**) is off by default. When enabled, an event that shows up in more than one of your calendars, whether those calendars sit in a single account or in several, is shown once instead of once per calendar. Two events are treated as the same occurrence when their start, end, all-day flag, and title match. The copy kept is the one that shows the most: more filled-in fields (color, link, location), then the longer title.

@@ -119,7 +119,8 @@ public:
   void setSaveWallpaperPaletteAsCustom(std::function<void()> callback) {
     m_saveWallpaperPaletteAsCustom = std::move(callback);
   }
-  void setCalendarService(CalendarService* service) { m_calendarService = service; }
+  // Also rebuilds the calendar account rows when an account's sync failure changes.
+  void setCalendarService(CalendarService* service);
   // Source for the bar widget gesture action picker.
   void setIpcService(IpcService* service) { m_ipcService = service; }
   void setClipboardService(ClipboardService* service) { m_clipboardService = service; }
@@ -263,6 +264,8 @@ private:
   UPowerService* m_upower = nullptr;
   AccountsService* m_accounts = nullptr;
   CalendarService* m_calendarService = nullptr;
+  std::optional<std::uint64_t> m_calendarCallbackId;
+  std::uint64_t m_calendarSyncStatusRevision = 0;
   ClipboardService* m_clipboardService = nullptr;
   IpcService* m_ipcService = nullptr;
   AsyncTextureCache* m_asyncTextures = nullptr;
