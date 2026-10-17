@@ -94,8 +94,10 @@ namespace calendar {
     struct FetchContext {
       std::size_t pending = 0;
       bool unauthorized = false;
+      bool anyOk = false;
+      SyncFailure firstFailure = SyncFailure::None;
       std::vector<CalendarEvent> events;
-      std::function<void(bool, bool, std::vector<CalendarEvent>)> cb;
+      std::function<void(SyncFailure, std::vector<CalendarEvent>)> cb;
     };
 
     void parseEventsInto(const nlohmann::json& j, const CalendarMeta& meta, std::vector<CalendarEvent>& out) {
@@ -177,7 +179,7 @@ namespace calendar {
 
   void GoogleClient::fetchEvents(
       const std::string& accessToken, std::chrono::system_clock::time_point start,
-      std::chrono::system_clock::time_point end, std::function<void(bool, bool, std::vector<CalendarEvent>)> cb
+      std::chrono::system_clock::time_point end, std::function<void(SyncFailure, std::vector<CalendarEvent>)> cb
   ) {
     const std::string bearer = "Authorization: Bearer " + accessToken;
 
@@ -188,13 +190,11 @@ namespace calendar {
     listReq.headers = {bearer};
 
     m_http.request(std::move(listReq), [this, bearer, start, end, cb = std::move(cb)](HttpResponse resp) mutable {
-      if (resp.transportOk && resp.status == 401) {
-        cb(false, true, {});
-        return;
-      }
       if (!resp.transportOk || resp.status != 200) {
-        kLog.warn("calendarList failed http={}", resp.status);
-        cb(false, false, {});
+        if (resp.status != 401) {
+          kLog.warn("calendarList failed http={}", resp.status);
+        }
+        cb(syncFailureFromResponse(resp), {});
         return;
       }
 
@@ -217,12 +217,12 @@ namespace calendar {
         }
       } catch (const std::exception& e) {
         kLog.warn("calendarList parse error: {}", e.what());
-        cb(false, false, {});
+        cb(SyncFailure::InvalidResponse, {});
         return;
       }
 
       if (calendars.empty()) {
-        cb(true, false, {});
+        cb(SyncFailure::None, {});
         return;
       }
 
@@ -244,22 +244,35 @@ namespace calendar {
             + uri::encodeComponent(timeMax);
         req.headers = {bearer};
         m_http.request(std::move(req), [ctx, meta](HttpResponse evResp) {
+          SyncFailure failure = SyncFailure::None;
           if (evResp.transportOk && evResp.status == 401) {
             ctx->unauthorized = true;
+            failure = SyncFailure::Authentication;
           } else if (evResp.transportOk && evResp.status == 200) {
             try {
               const auto j = nlohmann::json::parse(evResp.body);
               parseEventsInto(j, meta, ctx->events);
             } catch (const std::exception& e) {
               kLog.warn("events parse error for calendar {}: {}", meta.name, e.what());
+              failure = SyncFailure::InvalidResponse;
             }
           } else {
             kLog.warn("events fetch failed http={}", evResp.status);
+            failure = syncFailureFromResponse(evResp);
+          }
+          if (failure == SyncFailure::None) {
+            ctx->anyOk = true;
+          } else if (ctx->firstFailure == SyncFailure::None) {
+            ctx->firstFailure = failure;
           }
 
           if (--ctx->pending == 0) {
-            const bool ok = !ctx->unauthorized;
-            ctx->cb(ok, ctx->unauthorized, std::move(ctx->events));
+            // One calendar's events failing leaves the others; every calendar failing fails the account, so its
+            // last synced events are kept.
+            const SyncFailure result = ctx->unauthorized ? SyncFailure::Authentication
+                : ctx->anyOk                             ? SyncFailure::None
+                                                         : ctx->firstFailure;
+            ctx->cb(result, std::move(ctx->events));
           }
         });
       }
