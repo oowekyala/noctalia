@@ -152,6 +152,9 @@ private:
   void rebuildSnapshot();
   void scheduleNextRefresh();
 
+  // The span of events synced (calendar.sync_days_before/after) around now.
+  [[nodiscard]] std::chrono::system_clock::time_point syncWindowStart(std::chrono::system_clock::time_point now) const;
+  [[nodiscard]] std::chrono::system_clock::time_point syncWindowEnd(std::chrono::system_clock::time_point now) const;
   void fetchCalDav(const CalendarConfig::Account& account);
   void lookupCalDavPassword(
       const CalendarConfig::Account& account, calendar::CalendarCredentialStore::LookupCallback callback

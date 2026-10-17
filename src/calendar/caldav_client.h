@@ -19,6 +19,7 @@ namespace calendar {
     std::shared_ptr<const security::SecureBuffer> password; // app password
     std::string calendarName;
     std::string color;
+    long timeoutSeconds = 30; // the REPORT transfer
   };
 
   class CalDavClient {

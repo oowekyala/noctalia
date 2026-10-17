@@ -1392,6 +1392,13 @@ struct CalendarConfig {
   bool dedupeEvents = false; // collapse an occurrence that appears in more than one calendar, across accounts too
   std::vector<std::string> dedupeIgnorePatterns; // regexes stripped from a title before two events are compared
   std::int32_t refreshMinutes = 15;
+  // Days of events synced before and after today, for every account. Months of the control-center calendar
+  // outside this window show no events; a narrower one makes each sync smaller, for slow servers.
+  std::int32_t syncDaysBefore = 365;
+  std::int32_t syncDaysAfter = 365;
+  // Ceiling on each sync request of an account, connection included. Some servers build the events as they send
+  // them (a DavMail gateway converts each Exchange item), so a large calendar can take minutes.
+  std::int32_t requestTimeoutSeconds = 60;
   std::string eventDateFormat = "%A %e %B";
   std::string eventTimeFormat = "%H:%M";
   Reminders reminders;

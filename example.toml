@@ -280,6 +280,9 @@ enabled                     = false
 dedupe_events               = false         # merge an event that appears in more than one calendar into one entry
 dedupe_ignore_patterns      = []            # regexes stripped from a title before events are compared, e.g. ['\s*\(.*\)$']
 refresh_minutes             = 15
+sync_days_before            = 365           # days of past events synced
+sync_days_after             = 365           # days of upcoming events synced
+request_timeout_seconds     = 60            # how long each sync request may take
 event_date_format           = "%A %e %B"    # date format used for events
 event_time_format           = "%H:%M"       # time format used for events
 

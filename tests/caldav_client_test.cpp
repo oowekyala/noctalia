@@ -60,14 +60,17 @@ int main() {
   account.url = "https://example.test/calendar";
   account.calendarName = "Test";
   account.color = "#123456";
+  account.timeoutSeconds = 77;
 
   bool requestIssued = false;
   bool completed = false;
   bool completionOk = false;
   bool completionOnMainThread = false;
   std::size_t eventCount = 0;
-  calendar::CalDavClient client{[&](HttpRequest, calendar::CalDavClient::ResponseCallback callback) {
+  long requestTimeout = 0;
+  calendar::CalDavClient client{[&](HttpRequest request, calendar::CalDavClient::ResponseCallback callback) {
     requestIssued = true;
+    requestTimeout = request.timeoutSeconds;
     callback(HttpResponse{.transportOk = true, .status = 207, .body = normalBody});
   }};
 
@@ -83,6 +86,7 @@ int main() {
 
   bool ok = true;
   ok = expect(requestIssued, "fetch did not issue the HTTP request") && ok;
+  ok = expect(requestTimeout == 77, "the REPORT does not use the account's timeout") && ok;
   ok = expect(!completed, "completion was delivered synchronously") && ok;
   ok = expect(drainUntil([&]() { return completed; }), "timed out waiting for deferred completion") && ok;
   ok = expect(completionOk, "valid CalDAV response was rejected") && ok;
