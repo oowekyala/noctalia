@@ -284,6 +284,8 @@
       "all-day": "All day",
       "events": "Events",
       "no-events": "No events.",
+      "open-settings": "Open calendar settings",
+      "sync-now": "Sync now",
       "today": "Today",
       "toggle-events-card": "Toggle events card"
     },
@@ -2931,9 +2933,22 @@
           "button": "Edit",
           "button-reconnect": "Reconnect",
           "button-retry": "Retry",
-          "description": "Update this calendar account",
-          "description-locked": "The refresh token is in a locked keyring; unlock the keyring and retry",
-          "description-reconnect": "Google authorization is missing; reconnect this account"
+          "description-not-synced": "Not synced yet",
+          "description-sync-failed": "Sync failed: {reason}",
+          "description-synced": "Synced {when}",
+          "description-syncing-connecting": "Syncing: connecting…",
+          "description-syncing-downloading": "Syncing: downloading events…",
+          "failure-authentication": "The server rejected the username or password.",
+          "failure-configuration": "The account settings are incomplete.",
+          "failure-credentials": "No password is stored for this account, or it could not be read.",
+          "failure-credentials-locked": "The keyring holding its credentials is locked; unlock it, then retry.",
+          "failure-google-authorization": "Google authorization is missing or was revoked; reconnect the account.",
+          "failure-invalid-response": "The server's response could not be read.",
+          "failure-network": "The server could not be reached.",
+          "failure-no-calendars": "No calendars with events were found.",
+          "failure-not-found": "No calendar was found at the configured address.",
+          "failure-server": "The server reported an error.",
+          "failure-timeout": "The server took too long to respond."
         },
         "calendar-event-date-format": {
           "description": "The date format shown above the event list in calendar views",
@@ -2970,6 +2985,11 @@
           "description-recovery": "The calendar event cache could not be authenticated or is damaged; retry after restoring the correct key, or reset private storage",
           "description-unavailable": "No Secret Service provider is available; calendar events remain available for this session only",
           "label": "Calendar Event Storage"
+        },
+        "calendar-sync-now": {
+          "button": "Sync Now",
+          "description": "Sync every account now instead of at the next refresh",
+          "label": "Sync Now"
         },
         "calendar-week-numbers": {
           "description": "Show ISO 8601 week numbers alongside the calendar grid",
