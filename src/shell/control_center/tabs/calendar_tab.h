@@ -6,6 +6,7 @@
 #include "ui/controls/calendar_view.h"
 
 #include <limits>
+#include <string>
 
 class Button;
 class CalendarService;
@@ -35,6 +36,8 @@ private:
   void rebuild();
   void rebuildEventList(float scale);
   void toggleEventsCard();
+  // The sync button and, while an account fails, the warning that leads to its settings.
+  void updateSyncButtons();
 
   ConfigService* m_config = nullptr;
   CalendarService* m_calendar = nullptr;
@@ -42,6 +45,11 @@ private:
   bool m_eventsDirty = false;
   Flex* m_rootLayout = nullptr;
   Button* m_toggleEventsCardButton = nullptr;
+  Button* m_syncButton = nullptr;
+  Button* m_syncWarningButton = nullptr;
+  // What the sync buttons' tooltips last showed: updateSyncButtons runs on every refresh.
+  std::string m_syncTooltip;
+  std::string m_syncWarningTooltip;
   InputArea* m_calendarArea = nullptr;
   Flex* m_card = nullptr;
   Flex* m_header = nullptr;

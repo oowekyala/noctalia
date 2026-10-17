@@ -220,11 +220,28 @@ std::unique_ptr<Flex> CalendarTab::createHeaderActions() {
   if (m_config != nullptr) {
     m_showEventsCard = m_config->config().controlCenter.calendarTab.showEventsCard;
   }
-  return ui::row(
+  auto actions = ui::row(
       {
           .align = FlexAlign::Center,
           .gap = Style::spaceSm * scale,
       },
+      ui::button({
+          .out = &m_syncWarningButton,
+          .glyph = "alert-triangle",
+          .onClick = []() { PanelManager::instance().openSettingsWindow("calendar"); },
+          .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
+      }),
+      ui::button({
+          .out = &m_syncButton,
+          .glyph = "refresh",
+          .onClick =
+              [this]() {
+                if (m_calendar != nullptr) {
+                  m_calendar->requestRefresh();
+                }
+              },
+          .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
+      }),
       ui::button({
           .out = &m_toggleEventsCardButton,
           .glyph = m_showEventsCard ? "calendar-event" : "calendar-off",
@@ -234,6 +251,52 @@ std::unique_ptr<Flex> CalendarTab::createHeaderActions() {
           .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
       })
   );
+  m_syncTooltip.clear();
+  m_syncWarningTooltip.clear();
+  updateSyncButtons();
+  return actions;
+}
+
+void CalendarTab::updateSyncButtons() {
+  if (m_syncButton == nullptr || m_syncWarningButton == nullptr) {
+    return;
+  }
+  const bool available = m_calendar != nullptr
+      && m_config != nullptr
+      && m_config->config().calendar.enabled
+      && !m_config->config().calendar.accounts.empty();
+  m_syncButton->setVisible(available);
+  m_syncWarningButton->setVisible(false);
+  if (!available) {
+    return;
+  }
+
+  // Each account's status, one per line, in both tooltips.
+  std::string statuses;
+  std::string failures;
+  for (const CalendarConfig::Account& account : m_config->config().calendar.accounts) {
+    const std::string line = (account.displayName.empty() ? account.id : account.displayName)
+        + ": "
+        + m_calendar->accountStatusText(account);
+    statuses += "\n" + line;
+    const CalendarService::AccountStatus status = m_calendar->accountStatus(account);
+    if (!status.phase.has_value() && status.failure.has_value()) {
+      failures += "\n" + line;
+    }
+  }
+  const bool syncing = m_calendar->syncing();
+  m_syncButton->setGlyph(syncing ? "loader-2" : "refresh");
+  m_syncButton->setEnabled(!syncing);
+  m_syncWarningButton->setVisible(!failures.empty());
+  if (std::string tooltip = i18n::tr("control-center.calendar.sync-now") + statuses; tooltip != m_syncTooltip) {
+    m_syncButton->setTooltip(tooltip);
+    m_syncTooltip = std::move(tooltip);
+  }
+  if (std::string tooltip = i18n::tr("control-center.calendar.open-settings") + failures;
+      tooltip != m_syncWarningTooltip) {
+    m_syncWarningButton->setTooltip(tooltip);
+    m_syncWarningTooltip = std::move(tooltip);
+  }
 }
 
 void CalendarTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight) {
@@ -304,6 +367,7 @@ void CalendarTab::doUpdate(Renderer& renderer) {
   if (m_todayLabel != nullptr) {
     m_todayLabel->setText(formatShellDate(m_config));
   }
+  updateSyncButtons();
 }
 
 void CalendarTab::setActive(bool active) {
@@ -347,6 +411,8 @@ void CalendarTab::onClose() {
   m_previousButton = nullptr;
   m_nextButton = nullptr;
   m_toggleEventsCardButton = nullptr;
+  m_syncButton = nullptr;
+  m_syncWarningButton = nullptr;
   m_gridViewport = nullptr;
   m_grid = nullptr;
   m_eventsCard = nullptr;

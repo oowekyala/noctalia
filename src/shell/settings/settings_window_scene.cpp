@@ -2063,6 +2063,26 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
       it = m_settingsRegistry.insert(it, std::move(btn));
       ++it;
     }
+
+    settings::SettingEntry syncNow{
+        .section = settings::SettingsSection::Calendar,
+        .group = "calendar-accounts",
+        .title = i18n::tr("settings.schema.services.calendar-sync-now.label"),
+        .subtitle = i18n::tr("settings.schema.services.calendar-sync-now.description"),
+        .path = {},
+        .control =
+            settings::ButtonSetting{
+                .label = i18n::tr("settings.schema.services.calendar-sync-now.button"),
+                .action = [this]() { m_calendarService->requestRefresh(); },
+                .glyph = "refresh",
+            },
+        .searchText = "calendar sync now refresh update accounts",
+        .visibleWhen = [](const Config& c) { return c.calendar.enabled && !c.calendar.accounts.empty(); },
+    };
+    if (m_calendarService != nullptr) {
+      it = m_settingsRegistry.insert(it, std::move(syncNow));
+      ++it;
+    }
   }
   logSettingsProfile("refreshRegistry injectedEntries", phaseProfileWatch);
 }

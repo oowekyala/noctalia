@@ -123,6 +123,7 @@ public:
   [[nodiscard]] AccountStatus accountStatus(const CalendarConfig::Account& account) const;
   // The status as one line, as the account's Settings row and the calendar's sync button show it.
   [[nodiscard]] std::string accountStatusText(const CalendarConfig::Account& account) const;
+  [[nodiscard]] bool syncing() const noexcept { return m_refreshing; }
   // Changes whenever an account's status does, so a view can refresh only then.
   [[nodiscard]] std::uint64_t syncStatusRevision() const noexcept { return m_syncStatusRevision; }
   [[nodiscard]] CachePersistenceState cachePersistenceState() const noexcept { return m_cachePersistenceState; }

@@ -284,6 +284,8 @@
       "all-day": "All day",
       "events": "Events",
       "no-events": "No events.",
+      "open-settings": "Open calendar settings",
+      "sync-now": "Sync now",
       "today": "Today",
       "toggle-events-card": "Toggle events card"
     },
@@ -2983,6 +2985,11 @@
           "description-recovery": "The calendar event cache could not be authenticated or is damaged; retry after restoring the correct key, or reset private storage",
           "description-unavailable": "No Secret Service provider is available; calendar events remain available for this session only",
           "label": "Calendar Event Storage"
+        },
+        "calendar-sync-now": {
+          "button": "Sync Now",
+          "description": "Sync every account now instead of at the next refresh",
+          "label": "Sync Now"
         },
         "calendar-week-numbers": {
           "description": "Show ISO 8601 week numbers alongside the calendar grid",

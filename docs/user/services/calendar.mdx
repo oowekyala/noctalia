@@ -94,6 +94,10 @@ downloading events), when it last synced, or why its last sync failed and what f
 revoked with **Reconnect**. Syncs keep being retried at the refresh interval, and the events last synced stay shown
 meanwhile.
 
+**Sync Now**, below the accounts, syncs every account at once. The control center's calendar tab has the same button in
+its header, whose tooltip lists each account's status; while an account's last sync failed, a warning button beside it
+opens the calendar settings.
+
 ## Merging duplicate events
 
 `dedupe_events` (also **Settings → Calendar → General → Merge Duplicate Events**) is off by default. When enabled, an event that shows up in more than one of your calendars, whether those calendars sit in a single account or in several, is shown once instead of once per calendar. Two events are treated as the same occurrence when their start, end, all-day flag, and title match. The copy kept is the one that shows the most: more filled-in fields (color, link, location), then the longer title.
