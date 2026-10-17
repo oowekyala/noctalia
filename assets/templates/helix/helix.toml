@@ -59,7 +59,7 @@
 
 # User Interface
 # --------------
-"ui.background" = "none"
+"ui.background" = {}
 
 "ui.cursor" = { fg = "onSecondary", bg = "secondary" }
 "ui.cursor.match" = { fg = "onTertiary", bg = "tertiary", modifiers = ["bold"] }
