@@ -632,6 +632,7 @@
         "show-login-button": "Login Button",
         "show-media": "Media",
         "show-password-hint": "Password Hint",
+        "show-password-reveal": "Password Reveal",
         "show-seconds": "Second Hand",
         "show-session-buttons": "Session Buttons",
         "show-unlock-hint": "Unlock Hint",
@@ -1045,6 +1046,7 @@
       "lock-and-suspend": "Lock & Suspend",
       "logout": "Log Out",
       "reboot": "Reboot",
+      "reboot-uefi": "Reboot to UEFI",
       "shutdown": "Shut Down",
       "suspend": "Suspend"
     },
@@ -1697,6 +1699,21 @@
         }
       }
     },
+    "palette-inspector": {
+      "copied": "Copied {value}",
+      "copy-failed": "Could not copy the color to the clipboard.",
+      "copy-hex": "Copy hex value",
+      "copy-name": "Copy color name",
+      "description": "Template colors in {mode} mode.",
+      "empty": "No matching colors.",
+      "filter-all": "All Colors",
+      "filter-palette": "Palette",
+      "filter-terminal": "Terminal",
+      "missing": "Unavailable",
+      "search-placeholder": "Search color names or hex values...",
+      "terminal-number": "{number} · ANSI {index}",
+      "title": "Palette Inspector"
+    },
     "plugins": {
       "browse-store": "Browse Plugins",
       "panels": {
@@ -1880,6 +1897,11 @@
         "language": {
           "description": "Override automatic locale detection",
           "label": "Language"
+        },
+        "palette-inspector": {
+          "button": "Inspect Colors",
+          "description": "View template color names, swatches, and hex values for the active palette",
+          "label": "Palette Inspector"
         },
         "palette-source": {
           "description": "Where to derive the color palette from",
@@ -3510,6 +3532,10 @@
           "description": "Default time format for shell UI without its own setting",
           "label": "Time Format"
         },
+        "umbriel-audio-provider": {
+          "description": "Share the audio spectrum with Umbriel effects, even without a visualizer widget",
+          "label": "Provide Audio to Umbriel"
+        },
         "umbriel-overview-type-to-launch": {
           "description": "Open the launcher when typing in umbriel overview; uses a tiny keyboard-focus surface while overview is open",
           "label": "Type to Launch"
@@ -4757,6 +4783,10 @@
         "show-progress": {
           "description": "Fill the widget background to show playback progress",
           "label": "Show Playback Progress"
+        },
+        "show-running": {
+          "description": "Show running windows that are not in the pinned list",
+          "label": "Show Running"
         },
         "show-scroll-lock": {
           "description": "Show Scroll Lock state",

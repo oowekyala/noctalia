@@ -227,7 +227,7 @@ enum class SessionActionButtonVariant : std::uint8_t {
 };
 
 struct SessionPanelActionConfig {
-  // "lock" | "logout" | "suspend" | "lock_and_suspend" | "reboot" | "shutdown" | "command"
+  // "lock" | "logout" | "suspend" | "lock_and_suspend" | "reboot" | "reboot_uefi" | "shutdown" | "command"
   std::string action;
   bool enabled = true;
   // When set, runs via `process::runAsync` (shell string) instead of the built-in handler.
@@ -1286,6 +1286,7 @@ struct ShellConfig {
   bool setupWizardEnabled = true;
   bool niriOverviewTypeToLaunchEnabled = false;
   bool umbrielOverviewTypeToLaunchEnabled = false;
+  bool umbrielAudioProviderEnabled = false;
   bool polkitAgent = false;
   PasswordMaskStyle passwordMaskStyle = PasswordMaskStyle::CircleFilled;
   /// Readline-style editing shortcuts in every text input (Ctrl+A moves to the start instead of selecting all).
