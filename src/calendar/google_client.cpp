@@ -94,6 +94,7 @@ namespace calendar {
     struct FetchContext {
       std::size_t pending = 0;
       bool unauthorized = false;
+      bool anyFetched = false;
       std::vector<CalendarEvent> events;
       std::function<void(bool, bool, std::vector<CalendarEvent>)> cb;
     };
@@ -250,6 +251,7 @@ namespace calendar {
             try {
               const auto j = nlohmann::json::parse(evResp.body);
               parseEventsInto(j, meta, ctx->events);
+              ctx->anyFetched = true;
             } catch (const std::exception& e) {
               kLog.warn("events parse error for calendar {}: {}", meta.name, e.what());
             }
@@ -258,7 +260,9 @@ namespace calendar {
           }
 
           if (--ctx->pending == 0) {
-            const bool ok = !ctx->unauthorized;
+            // One calendar failing leaves the others' events; every calendar failing fails the account, so that
+            // the events it last synced are kept rather than replaced by none.
+            const bool ok = !ctx->unauthorized && ctx->anyFetched;
             ctx->cb(ok, ctx->unauthorized, std::move(ctx->events));
           }
         });
