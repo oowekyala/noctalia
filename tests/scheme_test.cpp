@@ -266,9 +266,9 @@ namespace {
     return ok;
   }
 
-  // Pinned hues only replaces the six terminal colors, every one readable on the terminal background,
-  // with red and green told apart even by the most muted schemes.
-  bool checkPinnedHues() {
+  // The terminal schemes only replace the six terminal colors, every one readable on the terminal
+  // background, with red and green told apart even by the most muted schemes.
+  bool checkTerminalSchemes() {
     using noctalia::theme::Scheme;
 
     constexpr std::array schemes{
@@ -290,8 +290,6 @@ namespace {
       noctalia::theme::applyTerminalScheme(unchanged, TerminalScheme::Default, scheme);
       ok = expect(unchanged == *generated, name + ": the default terminal scheme changes nothing") && ok;
 
-      auto pinned = *generated;
-      noctalia::theme::applyTerminalScheme(pinned, TerminalScheme::PinnedHues, scheme);
       const auto check = [&](const auto& before, const auto& after, std::string_view mode) {
         const std::string label = name + " " + std::string(mode);
         for (const auto& [key, value] : before) {
@@ -321,8 +319,13 @@ namespace {
         const double distance = std::hypot(red[0] - green[0], std::hypot(red[1] - green[1], red[2] - green[2]));
         ok = expect(distance >= 0.06, label + ": red and green are distinguishable") && ok;
       };
-      check(generated->dark, pinned.dark, "dark");
-      check(generated->light, pinned.light, "light");
+      for (const TerminalScheme terminal : {TerminalScheme::PinnedHues, TerminalScheme::Balanced}) {
+        auto regenerated = *generated;
+        noctalia::theme::applyTerminalScheme(regenerated, terminal, scheme);
+        const std::string terminalName{enumToKey(kTerminalSchemes, terminal)};
+        check(generated->dark, regenerated.dark, terminalName + " dark");
+        check(generated->light, regenerated.light, terminalName + " light");
+      }
     }
     return ok;
   }
@@ -336,6 +339,6 @@ int main() {
   ok = checkContainerSaturationHeadroom() && ok;
   ok = checkPerceptualContrastAdjustment() && ok;
   ok = checkTerminalContrast() && ok;
-  ok = checkPinnedHues() && ok;
+  ok = checkTerminalSchemes() && ok;
   return ok ? 0 : 1;
 }

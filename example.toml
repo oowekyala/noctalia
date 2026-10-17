@@ -162,7 +162,7 @@ builtin = "Noctalia"                # Ayu | Catppuccin | Dracula | Eldritch | Gr
 # wallpaper_scheme  = "m3-content"  # m3-tonal-spot | m3-content | m3-fruit-salad |
                                     # m3-rainbow | m3-monochrome | vibrant | faithful |
                                     # dysfunctional | muted
-# terminal_scheme   = "default"     # default | pinned-hues: terminal colors of a wallpaper palette
+# terminal_scheme   = "default"     # default | pinned-hues | balanced: terminal colors
 pure_black_dark = false             # anchor dark surfaces to true black (OLED); applies to
                                     # every palette source, not just wallpaper-generated ones
 

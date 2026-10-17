@@ -1653,6 +1653,7 @@
           "wallpaper": "Wallpaper"
         },
         "terminal-scheme": {
+          "balanced": "Balanced",
           "default": "Default",
           "pinned-hues": "Pinned Hues"
         }

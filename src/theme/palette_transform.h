@@ -26,8 +26,9 @@ namespace noctalia::theme {
   // according to `terminal` (see TerminalScheme); `base` is the scheme the palette was
   // generated with, which sets chroma and rotation. Everything else, black, white,
   // foreground, cursor and selection included, is kept. Meant to run after the other
-  // transforms: the colors are searched against the final terminal_background. A palette
-  // without source_color or terminal_background, and TerminalScheme::Default, are left as is.
+  // transforms: the colors are searched against the final terminal_background. They follow the
+  // palette's accent, or its source_color without one; a palette with neither, or without
+  // terminal_background, and TerminalScheme::Default, are left as is.
   void applyTerminalScheme(GeneratedPalette& palette, TerminalScheme terminal, Scheme base);
 
 } // namespace noctalia::theme

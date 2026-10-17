@@ -9,7 +9,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -43,8 +45,8 @@ namespace noctalia::theme {
       return hct.ToInt();
     }
 
-    // TerminalScheme::PinnedHues. Each color has a fixed hue (OKLCH degrees) and may be
-    // rotated towards the seed's hue by half their difference, at most `cap` degrees.
+    // The six terminal colors, each with its own hue (OKLCH degrees) and, with PinnedHues, the
+    // most it may turn towards its target (see harmonyTargets).
     struct PinnedHue {
       std::string_view name;
       double hue;
@@ -111,12 +113,6 @@ namespace noctalia::theme {
       return degrees < 0.0 ? degrees + 360.0 : degrees;
     }
 
-    // `hue` rotated towards `seedHue` by half their difference, at most `cap`, scaled by `pull`.
-    [[nodiscard]] double harmonizedHue(double hue, double seedHue, double cap, double pull) {
-      const double diff = wrapDegrees(seedHue - hue + 180.0) - 180.0;
-      return wrapDegrees(hue + std::clamp(diff / 2.0, -cap, cap) * pull);
-    }
-
     // The color of (chroma, hue) whose lightness is the closest to the background's at which
     // it reaches `target` contrast: lighter on a dark background, darker on a light one.
     [[nodiscard]] Color colorForContrast(double chroma, double hueRadians, const Color& background, double target) {
@@ -133,26 +129,87 @@ namespace noctalia::theme {
       return color;
     }
 
-    void applyPinnedHues(TokenMap& tokens, Scheme base) {
-      const auto sourceIt = tokens.find("source_color");
+    // Where the colors go: one dominant hue family, as most hand-made color schemes have. Four
+    // colors head for hues around the seed's, two for hues around its complement; exactly one of
+    // red and green is among those two, so that they stay apart (diffs). Within the family, chroma
+    // and contrast alternate, so that neighbouring hues differ in strength and lightness too.
+    struct HarmonyTarget {
+      double offset; // from the seed's hue, in degrees
+      double chromaFactor = 1.0;
+      double contrastFactor = 1.0;
+    };
+    constexpr std::array<HarmonyTarget, 6> kHarmonyTargets = {{
+        {-36.0, 1.0, 1.0},
+        {-12.0, 0.7, 1.3},
+        {12.0, 1.15, 1.0},
+        {36.0, 0.8, 1.3},
+        {162.0},
+        {198.0},
+    }};
+    constexpr std::size_t kFirstComplementTarget = 4;
+    constexpr std::size_t kRedSlot = 0;
+    constexpr std::size_t kGreenSlot = 2;
+
+    [[nodiscard]] double signedArc(double from, double to) { return wrapDegrees(to - from + 180.0) - 180.0; }
+
+    // Which target (index into kHarmonyTargets) each color (index into kPinnedHues) heads for: of the
+    // assignments that keep red and green apart, the one that moves the colors the least from their
+    // own hues (on a red wallpaper red stays in the family and green goes to the complement).
+    [[nodiscard]] std::array<std::size_t, 6> harmonyTargets(double seedHue) {
+      std::array<std::size_t, 6> order{0, 1, 2, 3, 4, 5};
+      std::array<std::size_t, 6> best = order;
+      double bestCost = std::numeric_limits<double>::max();
+      do {
+        if ((order[kRedSlot] >= kFirstComplementTarget) == (order[kGreenSlot] >= kFirstComplementTarget)) {
+          continue;
+        }
+        double cost = 0.0;
+        for (std::size_t i = 0; i < order.size(); ++i) {
+          cost += std::abs(signedArc(kPinnedHues[i].hue, seedHue + kHarmonyTargets[order[i]].offset));
+        }
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = order;
+        }
+      } while (std::next_permutation(order.begin(), order.end()));
+      return best;
+    }
+
+    // PinnedHues and Balanced are one algorithm at two strengths: each color moves from its own hue
+    // towards its target, half the way and at most its cap (PinnedHues), or all the way and with the
+    // target's chroma and contrast (Balanced); either way less so with a nearly gray seed. Then its
+    // lightness is searched for the contrast target on the background.
+    void applyTerminalColors(TokenMap& tokens, TerminalScheme terminal, Scheme base, std::uint32_t seedArgb) {
       const auto backgroundIt = tokens.find("terminal_background");
-      if (sourceIt == tokens.end() || backgroundIt == tokens.end()) {
+      if (backgroundIt == tokens.end()) {
         return;
       }
       const Color background = Color::fromArgb(backgroundIt->second);
-      const Oklch seed = toOklch(Color::fromArgb(sourceIt->second));
+      const Oklch seed = toOklch(Color::fromArgb(seedArgb));
       const double seedHue = wrapDegrees(seed.hueRadians * 180.0 / std::numbers::pi);
       const double pull = std::min(1.0, seed.chroma / kSeedFullChroma);
+      const bool balanced = terminal == TerminalScheme::Balanced;
+      const std::array<std::size_t, 6> targets = harmonyTargets(seedHue);
       const PinnedPreset preset = pinnedPreset(base);
       const bool dark = isDark(background);
       const double target = dark ? kPinnedContrastDark : kPinnedContrastLight;
       const double step = dark ? kBrightLightnessStep : -kBrightLightnessStep;
 
-      for (const PinnedHue& pinned : kPinnedHues) {
-        const double hueRadians =
-            harmonizedHue(pinned.hue, seedHue, pinned.cap * preset.capScale, pull) * std::numbers::pi / 180.0;
-        const double chroma = pinned.keepDistinct ? std::max(preset.chroma, preset.distinctChroma) : preset.chroma;
-        const Color normal = colorForContrast(chroma, hueRadians, background, target);
+      for (std::size_t i = 0; i < kPinnedHues.size(); ++i) {
+        const PinnedHue& pinned = kPinnedHues[i];
+        const HarmonyTarget goal =
+            balanced ? kHarmonyTargets[targets[i]] : HarmonyTarget{kHarmonyTargets[targets[i]].offset};
+        double move = signedArc(pinned.hue, seedHue + goal.offset);
+        if (!balanced) {
+          const double cap = pinned.cap * preset.capScale;
+          move = std::clamp(move / 2.0, -cap, cap);
+        }
+        const double hueRadians = wrapDegrees(pinned.hue + move * pull) * std::numbers::pi / 180.0;
+        double chroma = preset.chroma * goal.chromaFactor;
+        if (pinned.keepDistinct) {
+          chroma = std::max(chroma, preset.distinctChroma);
+        }
+        const Color normal = colorForContrast(chroma, hueRadians, background, target * goal.contrastFactor);
         const Oklch normalLch = toOklch(normal);
         const Color bright =
             gamutMapToSrgb({std::clamp(normalLch.lightness + step, 0.0, 1.0), chroma * kBrightChromaRatio, hueRadians});
@@ -224,8 +281,13 @@ namespace noctalia::theme {
       return;
     }
     for (TokenMap* tokens : {&palette.dark, &palette.light}) {
-      if (!tokens->empty()) {
-        applyPinnedHues(*tokens, base);
+      // The wallpaper's accent, or the source color of a palette without one (one loaded from JSON).
+      std::optional<std::uint32_t> seed = palette.accent;
+      if (const auto source = tokens->find("source_color"); !seed.has_value() && source != tokens->end()) {
+        seed = source->second;
+      }
+      if (seed.has_value() && !tokens->empty()) {
+        applyTerminalColors(*tokens, terminal, base, *seed);
       }
     }
   }

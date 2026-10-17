@@ -522,7 +522,8 @@ namespace settings {
       entries.push_back(makeEntry(
           SettingsSection::Appearance, "theme", tr("settings.schema.appearance.terminal-scheme.label"),
           tr("settings.schema.appearance.terminal-scheme.description"), {"theme", "terminal_scheme"},
-          enumSelect(kTerminalSchemes, cfg.theme.terminalScheme), "terminal colors scheme pinned hues harmonize ansi"
+          enumSelect(kTerminalSchemes, cfg.theme.terminalScheme),
+          "terminal colors scheme pinned hues balanced harmonize ansi"
       ));
     } else if (cfg.theme.source == PaletteSource::Community) {
       SettingControl communityPaletteControl =
