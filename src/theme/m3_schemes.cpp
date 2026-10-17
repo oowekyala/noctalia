@@ -433,6 +433,8 @@ namespace noctalia::theme {
 
   } // namespace
 
+  std::uint32_t materialSeed(const std::vector<uint8_t>& rgb112) { return extractSeed(rgb112); }
+
   GeneratedPalette generateMaterial(const std::vector<uint8_t>& rgb112, Scheme scheme) {
     const mcu::Argb seed = extractSeed(rgb112);
     const mcu::Hct source(seed);
@@ -445,6 +447,7 @@ namespace noctalia::theme {
     out.light = buildTokenMap(*lightScheme);
     out.dark["source_color"] = seed;
     out.light["source_color"] = seed;
+    out.accent = seed;
     setGeneratedHoverTokens(out);
     synthesizeTerminalPaletteTokens(out);
     return out;

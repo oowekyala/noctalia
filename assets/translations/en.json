@@ -1654,6 +1654,11 @@
           "community": "Community",
           "custom": "Custom",
           "wallpaper": "Wallpaper"
+        },
+        "terminal-scheme": {
+          "balanced": "Balanced",
+          "default": "Default",
+          "pinned-hues": "Pinned Hues"
         }
       },
       "theme-role": {
@@ -1920,6 +1925,10 @@
         "sync-color-scheme": {
           "description": "Set the system dark/light preference read by browsers and other apps to follow Theme Mode",
           "label": "Sync App Color Scheme"
+        },
+        "terminal-scheme": {
+          "description": "Choose how the terminal colors are generated from the wallpaper palette",
+          "label": "Terminal Colors"
         },
         "theme-mode": {
           "description": "Choose Dark, Light, or Auto based on time of day; also applies to apps through templates",

@@ -400,6 +400,7 @@ namespace noctalia::theme {
 
     const char* imagePath = parsed->positionals.empty() ? nullptr : parsed->positionals.front().data();
     const std::string_view schemeName = parsed->valueOr("--scheme", "m3-tonal-spot");
+    const std::string_view terminalSchemeName = parsed->valueOr("--terminal-scheme", "default");
     const char* themeJsonPath = parsed->has("--theme-json") ? parsed->value("--theme-json").data() : nullptr;
     Variant variant = Variant::Dark;
     for (const auto& [flag, value] : parsed->flagValues) {
@@ -466,6 +467,9 @@ namespace noctalia::theme {
 
     if (pureBlack) {
       applyPureBlackDark(palette);
+    }
+    if (const auto terminalScheme = enumFromKey(kTerminalSchemes, terminalSchemeName)) {
+      applyTerminalScheme(palette, *terminalScheme, *schemeOpt);
     }
 
     const std::string json = toJson(palette, *schemeOpt, variant);

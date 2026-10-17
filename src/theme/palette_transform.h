@@ -1,6 +1,11 @@
 #pragma once
 
 #include "theme/fixed_palette.h"
+#include "theme/scheme.h"
+
+#include <cstdint>
+
+enum class TerminalScheme : std::uint8_t;
 
 namespace noctalia::theme {
 
@@ -16,5 +21,14 @@ namespace noctalia::theme {
 
   void applyHighContrast(TokenMap& tokens, bool isDark);
   void applyHighContrast(GeneratedPalette& palette);
+
+  // Replaces the normal and bright red, yellow, green, cyan, blue and magenta terminal tokens
+  // according to `terminal` (see TerminalScheme); `base` is the scheme the palette was
+  // generated with, which sets chroma and rotation. Everything else, black, white,
+  // foreground, cursor and selection included, is kept. Meant to run after the other
+  // transforms: the colors are searched against the final terminal_background. They follow the
+  // palette's accent, or its source_color without one; a palette with neither, or without
+  // terminal_background, and TerminalScheme::Default, are left as is.
+  void applyTerminalScheme(GeneratedPalette& palette, TerminalScheme terminal, Scheme base);
 
 } // namespace noctalia::theme
