@@ -23,4 +23,7 @@ namespace noctalia::theme {
   // triangle for M3 schemes, box for the custom schemes.
   std::expected<LoadedImage, std::string> loadAndResize(std::string_view path, Scheme scheme);
 
+  // The same resize, from decoded RGBA pixels (rows top to bottom).
+  [[nodiscard]] LoadedImage resizeForPalette(const std::uint8_t* rgba, int width, int height, Scheme scheme);
+
 } // namespace noctalia::theme

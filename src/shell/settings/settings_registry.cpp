@@ -701,6 +701,11 @@ namespace settings {
         colorSpecPicker(cfg.wallpaper.fillColor, true), "background solid color"
     ));
     entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "general", tr("settings.schema.wallpaper.match-theme-mode.label"),
+        tr("settings.schema.wallpaper.match-theme-mode.description"), {"wallpaper", "match_theme_mode"},
+        ToggleSetting{cfg.wallpaper.matchThemeMode}, "invert lightness dark light mode polarity"
+    ));
+    entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory.label"),
         tr("settings.schema.wallpaper.directory.description"), {"wallpaper", "directory"},
         TextSetting{

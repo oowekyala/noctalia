@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
 
 class ConfigService;
 class HttpClient;
@@ -68,6 +69,8 @@ namespace noctalia::theme {
     struct WallpaperPaletteKey {
       std::string path;
       std::string schemeName;
+      // wallpaper.match_theme_mode: each mode's palette comes from the image as shown in that mode.
+      bool matchThemeMode = false;
       Scheme scheme = Scheme::Content;
       std::int64_t mtimeNs = 0;
 
@@ -108,6 +111,9 @@ namespace noctalia::theme {
     // Memoized wallpaper palette (see resolveWallpaperGenerated); any key mismatch re-decodes.
     std::optional<GeneratedPalette> m_wallpaperCacheGenerated;
     WallpaperPaletteKey m_wallpaperCacheKey;
+    // wallpaper_polarity variant listener, and the images whose palette was made again once their variant appeared.
+    std::uint64_t m_variantListener = 0;
+    std::unordered_set<std::string> m_variantRefreshed;
 
     // Main thread: the decode whose result is still wanted, and the last key that failed so a
     // broken file falls back to the builtin palette instead of re-queueing forever.

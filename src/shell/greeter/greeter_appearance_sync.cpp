@@ -8,6 +8,7 @@
 #include "dbus/polkit/polkit_session_support.h"
 #include "ipc/ipc_service.h"
 #include "render/core/color.h"
+#include "render/core/wallpaper_polarity.h"
 #include "shell/session/session_action_meta.h"
 #include "ui/palette.h"
 #include "util/file_utils.h"
@@ -244,6 +245,20 @@ namespace {
     return out.empty() ? std::string("unknown") : out;
   }
 
+  // The file that shows a wallpaper as the shell shows it in the synced theme mode: its inverted version when it is
+  // inverted there (wallpaper.match_theme_mode) and the GPU pass has written that version out; else the image itself.
+  [[nodiscard]] std::string
+  shownWallpaperFile(const ConfigService& configService, const std::string& path, std::string_view resolvedThemeMode) {
+    if (path.empty() || path.starts_with("color:") || !configService.config().wallpaper.matchThemeMode) {
+      return path;
+    }
+    const auto analysis = wallpaper_polarity::cached(path);
+    if (!analysis.has_value() || !wallpaper_polarity::invertedIn(*analysis, resolvedThemeMode == "light")) {
+      return path;
+    }
+    return wallpaper_polarity::variantFile(path).value_or(path);
+  }
+
   // Fallback single wallpaper when no per-output map is usable.
   [[nodiscard]] std::string resolveSyncWallpaperPath(const ConfigService& configService) {
     if (const auto output = readGreeterConfiguredOutput(); output.has_value() && !output->empty()) {
@@ -268,8 +283,9 @@ namespace {
   // Stage every per-monitor wallpaper so the greeter can pick by connector name.
   // File wallpapers are copied as wallpaper-<connector>.*; solid color: specs are
   // kept as sourcePath only (no file) so the wallpapers map can still reference them.
-  [[nodiscard]] std::optional<std::vector<StagedOutputWallpaper>>
-  stageAllOutputWallpapers(const std::filesystem::path& staging, const ConfigService& configService) {
+  [[nodiscard]] std::optional<std::vector<StagedOutputWallpaper>> stageAllOutputWallpapers(
+      const std::filesystem::path& staging, const ConfigService& configService, std::string_view resolvedThemeMode
+  ) {
     std::vector<StagedOutputWallpaper> staged;
     for (const auto& [connector, sourcePath] : configService.monitorWallpaperPaths()) {
       if (connector.empty() || sourcePath.empty()) {
@@ -281,7 +297,7 @@ namespace {
         continue;
       }
       std::error_code ec;
-      const std::filesystem::path source(sourcePath);
+      const std::filesystem::path source(shownWallpaperFile(configService, sourcePath, resolvedThemeMode));
       if (!std::filesystem::is_regular_file(source, ec) || ec) {
         kLog.warn("greeter sync: skip missing wallpaper for '{}': {}", connector, sourcePath);
         continue;
@@ -1043,12 +1059,13 @@ namespace greeter {
       kLog.info("greeter sync: no compositor platform provided; skipping output layout/transforms/scales sync");
     }
 
-    const auto outputWallpapers = stageAllOutputWallpapers(staging, configService);
+    const auto outputWallpapers = stageAllOutputWallpapers(staging, configService, resolvedThemeMode);
     if (!outputWallpapers.has_value()) {
       return GreeterSyncLaunch::Failed;
     }
     std::string wallpaperPath = resolveSyncWallpaperPath(configService);
-    const auto stagedWallpaper = stageWallpaper(staging, wallpaperPath);
+    const auto stagedWallpaper =
+        stageWallpaper(staging, shownWallpaperFile(configService, wallpaperPath, resolvedThemeMode));
     if (!stagedWallpaper.has_value()) {
       return GreeterSyncLaunch::Failed;
     }

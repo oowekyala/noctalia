@@ -6,6 +6,7 @@
 #include "core/scoped_timer.h"
 #include "ipc/ipc_service.h"
 #include "net/http_client.h"
+#include "render/core/wallpaper_polarity.h"
 #include "system/day_night_schedule.h"
 #include "theme/builtin_palettes.h"
 #include "theme/community_palettes.h"
@@ -49,8 +50,52 @@ namespace noctalia::theme {
       std::string shellMode;
     };
 
+    // The image as shown in the mode it is inverted for (wallpaper.match_theme_mode): the GPU pass's output, as the
+    // texture cache keeps a preview of it once it rendered it this session, or as the file an earlier session left.
+    // Empty until then; the service generates the palette again when it appears.
+    std::optional<std::vector<std::uint8_t>> invertedForPalette(const std::string& path, Scheme scheme) {
+      if (const auto preview = wallpaper_polarity::variantPreview(path)) {
+        return resizeForPalette(preview->rgba.data(), preview->width, preview->height, scheme).rgb;
+      }
+      if (const auto file = wallpaper_polarity::variantFile(path)) {
+        if (auto image = loadAndResize(*file, scheme)) {
+          return std::move(image->rgb);
+        }
+      }
+      return std::nullopt;
+    }
+
+    // The dark and light palettes of an image as it is shown in each mode: with wallpaper.match_theme_mode, an image
+    // that doesn't suit a mode is shown inverted there (render/core/wallpaper_polarity.h), and that mode's palette
+    // comes from the inverted image. The analysis is shared with the wallpaper renderer, so both agree.
+    std::expected<GeneratedPalette, std::string>
+    generateMatchingThemeMode(const std::string& path, const std::vector<std::uint8_t>& rgb, Scheme scheme) {
+      constexpr int kSide = 112;
+      const auto stored = wallpaper_polarity::cached(path);
+      const wallpaper_polarity::Analysis analysis = stored
+          ? *stored
+          : wallpaper_polarity::remember(path, wallpaper_polarity::analyze(rgb.data(), kSide, kSide, 3));
+      const auto forMode = [&](bool lightMode) {
+        if (!wallpaper_polarity::invertedIn(analysis, lightMode)) {
+          return generate(rgb, scheme);
+        }
+        const auto shown = invertedForPalette(path, scheme);
+        return generate(shown ? *shown : rgb, scheme);
+      };
+      auto dark = forMode(false);
+      if (!dark) {
+        return dark;
+      }
+      auto light = forMode(true);
+      if (!light) {
+        return light;
+      }
+      return GeneratedPalette{.dark = std::move(dark->dark), .light = std::move(light->light)};
+    }
+
     // Pure and thread-safe: runs on the wallpaper palette worker as well as the main thread.
-    std::optional<GeneratedPalette> decodeWallpaperPalette(const std::string& path, Scheme scheme) {
+    std::optional<GeneratedPalette>
+    decodeWallpaperPalette(const std::string& path, Scheme scheme, bool matchThemeMode) {
       profiling::StopWatch loadWatch;
       auto image = loadAndResize(path, scheme);
       if (profiling::enabled()) {
@@ -61,7 +106,8 @@ namespace noctalia::theme {
         return std::nullopt;
       }
       profiling::StopWatch genWatch;
-      auto generated = generate(image->rgb, scheme);
+      auto generated =
+          matchThemeMode ? generateMatchingThemeMode(path, image->rgb, scheme) : generate(image->rgb, scheme);
       if (profiling::enabled()) {
         kLog.info("theme: wallpaper palette generate: {:.1F} ms", genWatch.elapsedMs());
       }
@@ -287,9 +333,23 @@ namespace noctalia::theme {
   } // namespace
 
   ThemeService::ThemeService(ConfigService& config, HttpClient& httpClient)
-      : m_config(config), m_httpClient(httpClient) {}
+      : m_config(config), m_httpClient(httpClient) {
+    // The inverted version of the palette's wallpaper appeared (wallpaper.match_theme_mode): its mode's palette, made
+    // from the original until then, is made again from it. Once per image.
+    m_variantListener = wallpaper_polarity::addVariantListener([this](const std::string& path) {
+      if (!m_wallpaperCacheGenerated.has_value()
+          || m_wallpaperCacheKey.path != path
+          || !m_wallpaperCacheKey.matchThemeMode
+          || !m_variantRefreshed.insert(path).second) {
+        return;
+      }
+      m_wallpaperCacheGenerated.reset();
+      resolveAndSet(/*animate=*/true);
+    });
+  }
 
   ThemeService::~ThemeService() {
+    wallpaper_polarity::removeVariantListener(m_variantListener);
     m_alive.reset();
     {
       std::scoped_lock lock(m_wallpaperWorkerMutex);
@@ -448,6 +508,7 @@ namespace noctalia::theme {
     return WallpaperPaletteKey{
         .path = wallpaperPath,
         .schemeName = cfg.wallpaperScheme,
+        .matchThemeMode = m_config.config().wallpaper.matchThemeMode,
         .scheme = *scheme,
         .mtimeNs = ec ? 0 : static_cast<std::int64_t>(writeTime.time_since_epoch().count()),
     };
@@ -474,7 +535,7 @@ namespace noctalia::theme {
     if (wallpaperCacheMatches(*key)) {
       return m_wallpaperCacheGenerated;
     }
-    auto generated = decodeWallpaperPalette(key->path, key->scheme);
+    auto generated = decodeWallpaperPalette(key->path, key->scheme, key->matchThemeMode);
     if (generated) {
       storeWallpaperCache(*key, *generated);
     }
@@ -493,7 +554,7 @@ namespace noctalia::theme {
     // An unstat-able file cannot be cached, so a background result could never be served;
     // reading it fails fast anyway.
     if (key->mtimeNs == 0) {
-      return {.generated = decodeWallpaperPalette(key->path, key->scheme)};
+      return {.generated = decodeWallpaperPalette(key->path, key->scheme, key->matchThemeMode)};
     }
     if (m_wallpaperFailed == key) {
       return {};
@@ -530,7 +591,7 @@ namespace noctalia::theme {
         key = std::move(*m_wallpaperQueued);
         m_wallpaperQueued.reset();
       }
-      auto generated = decodeWallpaperPalette(key.path, key.scheme);
+      auto generated = decodeWallpaperPalette(key.path, key.scheme, key.matchThemeMode);
       DeferredCall::callLater([this, alive, key = std::move(key), generated = std::move(generated)]() mutable {
         if (alive.expired()) {
           return;

@@ -21,6 +21,7 @@
 class GlSharedContext;
 class RenderBackend;
 class TextureManager;
+class WallpaperPolarityProgram;
 
 enum class SharedTextureKind : std::uint8_t {
   Color,
@@ -44,6 +45,9 @@ struct SharedTextureRequest {
   std::string path;
   SharedTextureKind kind = SharedTextureKind::Color;
   TextureCoverage coverage;
+  // The image with its lightness inverted (render/core/wallpaper_polarity.h), rendered on the GPU from the original,
+  // and read back once for the palette and the variant file. Color images only.
+  bool inverted = false;
 
   bool operator==(const SharedTextureRequest&) const = default;
 };
@@ -156,6 +160,8 @@ private:
     int sourceHeight = 0;
     bool opaque = false;
     bool failed = false;
+    // An inverted request whose original was already resident: rendered from that texture, nothing decoded.
+    bool fromResident = false;
   };
 
   void retainEntry(const EntryKey& key);
@@ -171,6 +177,10 @@ private:
   void cancelDecodeIfUnused(const SharedTextureRequest& request);
   [[nodiscard]] bool hasLoadingEntry(const SharedTextureRequest& request) const;
   void upload(const EntryKey& key, Entry& entry, const DecodedImage& image);
+  // An inverted entry: the polarity pass from `source` (the resident original, or the decoded pixels uploaded for the
+  // pass), into a texture of its own.
+  void uploadInverted(const EntryKey& key, Entry& entry, const DecodedImage& image);
+  [[nodiscard]] const Entry* findReadyOriginal(const EntryKey& key) const;
   void unloadEntry(const EntryKey& key, Entry& entry);
   [[nodiscard]] TextureManager* textureManagerFor(const EntryKey& key) const;
   // Binds a context that can reach `key`'s textures. False while the context is lost; the next
@@ -183,6 +193,8 @@ private:
 
   GlSharedContext* m_sharedGl = nullptr;
   std::unique_ptr<TextureManager> m_textureManager;
+  // The polarity pass, one per share group: the shared context's (key null), or each consumer backend's.
+  std::unordered_map<const RenderBackend*, std::unique_ptr<WallpaperPolarityProgram>> m_polarityPrograms;
   int m_eventFd = -1;
   std::thread m_worker;
   std::atomic<bool> m_shutdown{false};

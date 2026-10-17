@@ -5,7 +5,9 @@
 #include "render/core/image_file_loader.h"
 #include "render/core/image_source_log.h"
 #include "render/core/texture_manager.h"
+#include "render/core/wallpaper_polarity.h"
 #include "render/gl_shared_context.h"
+#include "render/programs/wallpaper_polarity_program.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -153,7 +155,15 @@ SharedTextureCache::~SharedTextureCache() {
   // Textures uploaded into consumer backends die with those backends' contexts. Best-effort for the shared ones: if
   // the context can't be bound (lost on resume), the GL textures are already gone.
   if (m_textureManager != nullptr && makeCurrentFor(EntryKey{})) {
+    if (const auto it = m_polarityPrograms.find(nullptr); it != m_polarityPrograms.end()) {
+      it->second->destroy();
+    }
     m_textureManager->cleanup();
+  }
+  // The consumer backends' programs died with their contexts.
+  for (auto& [backend, program] : m_polarityPrograms) {
+    (void)backend;
+    program->abandon();
   }
 
   if (m_eventFd >= 0) {
@@ -189,6 +199,10 @@ SharedTextureCache::acquire(SharedTextureRequest request, RenderBackend* backend
 void SharedTextureCache::abandonGpuResources() noexcept {
   if (m_textureManager != nullptr) {
     m_textureManager->abandonGpuResources();
+  }
+  for (auto& [backend, program] : m_polarityPrograms) {
+    (void)backend;
+    program->abandon();
   }
   // A reset loses every context, including the per-backend ones.
   for (auto& [key, entry] : m_entries) {
@@ -279,9 +293,15 @@ void SharedTextureCache::dispatch(const std::vector<pollfd>& fds, std::size_t st
 void SharedTextureCache::retainEntry(const EntryKey& key) {
   auto [it, inserted] = m_entries.try_emplace(key);
   ++it->second.refCount;
-  if (inserted) {
-    requestDecode(key.request);
+  if (!inserted) {
+    return;
   }
+  if (key.request.inverted && findReadyOriginal(key) != nullptr) {
+    // Rendered from the original already on the GPU, from dispatch(): nothing to decode.
+    pushResult(DecodedImage{.request = key.request, .fromResident = true});
+    return;
+  }
+  requestDecode(key.request);
 }
 
 void SharedTextureCache::releaseEntry(const EntryKey& key) {
@@ -426,6 +446,10 @@ bool SharedTextureCache::hasLoadingEntry(const SharedTextureRequest& request) co
 }
 
 void SharedTextureCache::upload(const EntryKey& key, Entry& entry, const DecodedImage& image) {
+  if (key.request.inverted && key.request.kind == SharedTextureKind::Color) {
+    uploadInverted(key, entry, image);
+    return;
+  }
   if (!makeCurrentFor(key)) {
     return;
   }
@@ -449,6 +473,68 @@ void SharedTextureCache::upload(const EntryKey& key, Entry& entry, const Decoded
       "uploaded {} ({}x{} from {}x{})", key.request.path, image.width, image.height, image.sourceWidth,
       image.sourceHeight
   );
+}
+
+const SharedTextureCache::Entry* SharedTextureCache::findReadyOriginal(const EntryKey& key) const {
+  EntryKey original = key;
+  original.request.inverted = false;
+  const auto it = m_entries.find(original);
+  return it != m_entries.end() && it->second.state == EntryState::Ready ? &it->second : nullptr;
+}
+
+void SharedTextureCache::uploadInverted(const EntryKey& key, Entry& entry, const DecodedImage& image) {
+  const Entry* original = image.fromResident ? findReadyOriginal(key) : nullptr;
+  if (image.fromResident && original == nullptr) {
+    // The original went away before dispatch(): decode it after all.
+    requestDecode(key.request);
+    return;
+  }
+  // Measured by the worker when it decoded the image (the original's decode, for one already resident).
+  const auto analysis = wallpaper_polarity::cached(key.request.path);
+  if (!analysis.has_value() || !makeCurrentFor(key)) {
+    entry.state = EntryState::Failed;
+    return;
+  }
+  TextureManager* manager = textureManagerFor(key);
+  const TextureHandle source =
+      original != nullptr ? original->handle : manager->loadFromRgba(image.pixels.data(), image.width, image.height);
+  const auto releaseSource = [&]() {
+    if (original == nullptr) {
+      TextureHandle uploaded = source;
+      manager->unload(uploaded);
+    }
+  };
+  if (!source.valid()) {
+    kLog.warn("failed to upload {} for its inverted version", key.request.path);
+    entry.state = EntryState::Failed;
+    return;
+  }
+
+  TextureHandle target = manager->createEmpty(source.width, source.height, TextureDataFormat::Rgba);
+  auto& program = m_polarityPrograms[key.backend];
+  if (program == nullptr) {
+    program = std::make_unique<WallpaperPolarityProgram>();
+  }
+  std::vector<std::uint8_t> pixels;
+  const bool rendered = target.valid()
+      && program->render(
+          static_cast<GLuint>(source.id.value()), static_cast<GLuint>(target.id.value()), source.width, source.height,
+          *analysis, &pixels
+      );
+  releaseSource();
+  if (!rendered) {
+    kLog.warn("failed to render the inverted version of {}", key.request.path);
+    manager->unload(target);
+    entry.state = EntryState::Failed;
+    return;
+  }
+  target.sourceWidth = original != nullptr ? original->handle.sourceWidth : image.sourceWidth;
+  target.sourceHeight = original != nullptr ? original->handle.sourceHeight : image.sourceHeight;
+  target.opaque = original != nullptr ? original->handle.opaque : image.opaque;
+  entry.handle = target;
+  entry.state = EntryState::Ready;
+  kLog.info("rendered the inverted version of {} ({}x{})", key.request.path, target.width, target.height);
+  wallpaper_polarity::storeVariant(key.request.path, pixels, target.width, target.height);
 }
 
 void SharedTextureCache::unloadEntry(const EntryKey& key, Entry& entry) {
@@ -522,6 +608,13 @@ void SharedTextureCache::workerLoop() {
     }
     // Averaging fully opaque pixels stays fully opaque, so the source answer holds for every reduction.
     const bool opaque = !alphaMask && allOpaque(loaded->rgba);
+    // Measured here, off the main thread and before the texture is announced, so whoever shows the image can tell
+    // whether it suits the theme mode (wallpaper_polarity.h).
+    if (!alphaMask && !wallpaper_polarity::cached(path).has_value()) {
+      (void)wallpaper_polarity::remember(
+          path, wallpaper_polarity::analyze(loaded->rgba.data(), sourceWidth, sourceHeight, 4)
+      );
+    }
 
     // Smallest reduction first, so each result is copied out before the buffer is halved further.
     std::ranges::sort(batch, {}, [sourceWidth, sourceHeight](const SharedTextureRequest& request) {
@@ -575,7 +668,9 @@ void SharedTextureCache::signalMain() {
 }
 
 std::size_t SharedTextureCache::RequestHash::operator()(const SharedTextureRequest& request) const noexcept {
-  return std::hash<std::string>{}(request.path) ^ (static_cast<std::size_t>(request.kind) << 1U);
+  return std::hash<std::string>{}(request.path)
+      ^ (static_cast<std::size_t>(request.kind) << 1U)
+      ^ (request.inverted ? 0x9e3779b97f4a7c15ULL : 0U);
 }
 
 std::size_t SharedTextureCache::EntryKeyHash::operator()(const EntryKey& key) const noexcept {

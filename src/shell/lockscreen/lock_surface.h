@@ -217,6 +217,8 @@ private:
   bool m_captureDirty = true;
   std::string m_wallpaperPath;
   std::string m_shownWallpaperPath;
+  bool m_shownWallpaperInverted = false;
+  bool m_pendingWallpaperInverted = false;
   std::string m_pendingWallpaperPath;
   WallpaperFillMode m_wallpaperFillMode = WallpaperFillMode::Crop;
   TextureCoverage m_wallpaperCoverage;

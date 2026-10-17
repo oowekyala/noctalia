@@ -2,6 +2,7 @@
 
 #include "config/config_types.h"
 #include "render/core/shared_texture_cache.h"
+#include "render/core/wallpaper_polarity.h"
 #include "render/core/wallpaper_types.h"
 #include "shell/wallpaper/wallpaper_shuffle_state.h"
 #include "ui/signal.h"
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -61,6 +63,9 @@ public:
 
   [[nodiscard]] TextureHandle currentTexture() const;
   [[nodiscard]] std::string currentPath() const;
+  // A file that shows the current wallpaper as it is shown: with wallpaper.match_theme_mode, its inverted version's
+  // file when it is shown inverted, empty until that file is written; else the image's path.
+  [[nodiscard]] std::string currentShownFile() const;
 
   // Emits whenever the displayed wallpaper (path/texture) changes, including
   // automation rotation and transition completion. Lets consumers pre-warm
@@ -111,7 +116,7 @@ private:
   void loadWallpaper(WallpaperInstance& instance, const std::string& path);
   void beginWallpaperChange(
       WallpaperInstance& instance, const std::string& path, WallpaperSourceKind kind, SharedTextureCache::Lease image,
-      const Color& color
+      const Color& color, bool inverted = false
   );
   void onImageChanged(WallpaperInstance& instance);
   static void cancelLoading(WallpaperInstance& instance);
@@ -126,6 +131,15 @@ private:
   void discardPendingWallpaper(WallpaperInstance& instance);
   void runQueuedWallpaper(WallpaperInstance& instance);
   void updateRendererState(WallpaperInstance& instance);
+  // Whether an image with this analysis is shown inverted in the current theme mode.
+  [[nodiscard]] bool invertedFor(const std::optional<wallpaper_polarity::Analysis>& analysis) const;
+  [[nodiscard]] SharedTextureCache::Lease
+  acquireImage(WallpaperInstance& instance, const std::string& path, bool inverted);
+  // A loaded original: shown as it is, or in its inverted version once that is rendered.
+  void showLoadedImage(WallpaperInstance& instance, const std::string& path, SharedTextureCache::Lease original);
+  // After a theme mode change (or the setting's): crossfades the shown image into its
+  // other version when it no longer suits the mode.
+  void refreshPolarity(WallpaperInstance& instance);
   void releaseInstanceTextures(WallpaperInstance& inst);
 
   WaylandConnection* m_wayland = nullptr;

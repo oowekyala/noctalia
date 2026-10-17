@@ -180,7 +180,7 @@ HomeTab::HomeTab(const ControlCenterServices& services)
   if (m_wallpaper != nullptr) {
     m_wallpaperChangedConn = m_wallpaper->changed().connect([this]() {
       if (m_thumbnails != nullptr && m_loadedWallpaperSize > 0) {
-        ensureWallpaperThumbnail(m_wallpaper->currentPath(), m_loadedWallpaperSize);
+        ensureWallpaperThumbnail(m_wallpaper->currentShownFile(), m_loadedWallpaperSize);
       }
       if (m_wallpaperBg != nullptr) {
         PanelManager::instance().requestUpdateOnly();
@@ -1105,11 +1105,15 @@ void HomeTab::syncWallpaperBackground(Renderer& renderer) {
   }
 
   const std::string path = m_wallpaper != nullptr ? m_wallpaper->currentPath() : std::string{};
+  // The crisp layer's file: the wallpaper as shown, its inverted version's file when it is shown inverted
+  // (wallpaper.match_theme_mode). Empty while that file is being written: the placeholder, the shown texture, carries
+  // the card until then.
+  const std::string crispPath = m_wallpaper != nullptr ? m_wallpaper->currentShownFile() : std::string{};
   const float renderScale = std::max(1.0F, renderer.renderScale());
   const int targetPx =
       static_cast<int>(std::lround(std::max(m_wallpaperBg->width(), m_wallpaperBg->height()) * renderScale));
 
-  ensureWallpaperThumbnail(path, targetPx);
+  ensureWallpaperThumbnail(crispPath, targetPx);
 
   if (path.empty()) {
     m_placeholderReady = false;
@@ -1135,8 +1139,8 @@ void HomeTab::syncWallpaperBackground(Renderer& renderer) {
 
   // Reset the crisp layer when the wallpaper identity or target size changes; the
   // placeholder carries the view until the new card-sized thumbnail is decoded.
-  if (path != m_crispWorkingPath || targetPx != m_crispWorkingSize) {
-    m_crispWorkingPath = path;
+  if (crispPath != m_crispWorkingPath || targetPx != m_crispWorkingSize) {
+    m_crispWorkingPath = crispPath;
     m_crispWorkingSize = targetPx;
     m_crispShown = false;
     m_crispNeedsFade = false;
@@ -1146,13 +1150,13 @@ void HomeTab::syncWallpaperBackground(Renderer& renderer) {
     m_wallpaperBg->setVisible(false);
   }
 
-  if (m_thumbnails == nullptr || targetPx <= 0 || m_crispShown) {
+  if (m_thumbnails == nullptr || targetPx <= 0 || m_crispShown || crispPath.empty()) {
     syncWallpaperLayerVisibility();
     return;
   }
 
   (void)m_thumbnails->uploadPending(renderer.textureManager());
-  const TextureHandle crisp = m_thumbnails->peek(path, targetPx);
+  const TextureHandle crisp = m_thumbnails->peek(crispPath, targetPx);
   if (!crisp.valid()) {
     // Still decoding: keep the placeholder; fade the crisp layer in once it lands.
     m_crispNeedsFade = true;
