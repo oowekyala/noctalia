@@ -903,8 +903,8 @@
       "calendar-sync-failure-authentication": "The server rejected the username or password.",
       "calendar-sync-failure-configuration": "The account settings are incomplete.",
       "calendar-sync-failure-credentials": "No password is stored for this account, or it could not be read.",
-      "calendar-sync-failure-credentials-locked": "The keyring holding the password is locked.",
-      "calendar-sync-failure-google-authentication": "Google no longer accepts this account's authorization; reconnect it in Settings.",
+      "calendar-sync-failure-credentials-locked": "The keyring holding its credentials is locked; unlock it, then retry.",
+      "calendar-sync-failure-google-authorization": "Google authorization is missing or was revoked; reconnect the account.",
       "calendar-sync-failure-invalid-response": "The server's response could not be read.",
       "calendar-sync-failure-network": "The server could not be reached.",
       "calendar-sync-failure-no-calendars": "No calendars with events were found.",
@@ -2944,10 +2944,9 @@
           "button": "Edit",
           "button-reconnect": "Reconnect",
           "button-retry": "Retry",
-          "description": "Update this calendar account",
-          "description-locked": "The refresh token is in a locked keyring; unlock the keyring and retry",
-          "description-reconnect": "Google authorization is missing; reconnect this account",
-          "description-sync-failed": "Sync failed: {reason}"
+          "description-not-synced": "Not synced yet",
+          "description-sync-failed": "Sync failed: {reason}",
+          "description-synced": "Synced {when}"
         },
         "calendar-event-date-format": {
           "description": "The date format shown above the event list in calendar views",

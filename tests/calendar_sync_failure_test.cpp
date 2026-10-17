@@ -46,6 +46,11 @@ int main() {
   ok = expect(!calendar::recordSyncResult(streak, SyncFailure::Server), "a transient failure was shown after a success")
       && ok;
 
+  // A locked keyring stays locked until someone unlocks it: shown at once.
+  streak = {};
+  ok = expect(calendar::recordSyncResult(streak, SyncFailure::CredentialsLocked), "a locked keyring was not shown")
+      && ok;
+
   // A cancelled sync leaves the streak as it was.
   const SyncFailureStreak before = streak;
   ok = expect(!calendar::recordSyncResult(streak, SyncFailure::Cancelled), "a cancelled sync was a change") && ok;
@@ -67,6 +72,16 @@ int main() {
            calendar::syncFailureFromResponse(HttpResponse{.transportOk = true, .status = 302})
                == SyncFailure::InvalidResponse,
            "an unexpected status is not an invalid response"
+       )
+      && ok;
+
+  // A Google account is reconnected rather than given a password.
+  ok = expect(
+           calendar::syncFailureMessageKey(SyncFailure::Credentials, true)
+                   == calendar::syncFailureMessageKey(SyncFailure::Authentication, true)
+               && calendar::syncFailureMessageKey(SyncFailure::Credentials, true)
+                   != calendar::syncFailureMessageKey(SyncFailure::Credentials),
+           "a Google account's credentials have no message of their own"
        )
       && ok;
 

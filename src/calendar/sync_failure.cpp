@@ -36,7 +36,10 @@ namespace calendar {
     return streak.shown != previous.shown || (streak.shown && streak.failure != previous.failure);
   }
 
-  std::string_view syncFailureMessageKey(SyncFailure failure) {
+  std::string_view syncFailureMessageKey(SyncFailure failure, bool google) {
+    if (google && (failure == SyncFailure::Authentication || failure == SyncFailure::Credentials)) {
+      return "notifications.internal.calendar-sync-failure-google-authorization";
+    }
     switch (failure) {
     case SyncFailure::None:
     case SyncFailure::Cancelled:

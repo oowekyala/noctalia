@@ -38,6 +38,7 @@ namespace {
   constexpr const char* kSecurityMigrationOwner = "security_migrations";
   constexpr const char* kCalendarCredentialMigration = "calendar_credentials_v1";
   constexpr const char* kCalendarDiscoveryOwner = "calendar_discovery";
+  constexpr const char* kCalendarSyncOwner = "calendar_sync";
   constexpr const char* kICloudCalDavServerUrl = "https://caldav.icloud.com/";
   constexpr auto kConnectPollInterval = std::chrono::seconds{2};
   // Wide enough for month navigation in the control-center calendar (~1 year each way).
@@ -284,8 +285,11 @@ CalendarService::~CalendarService() = default;
 
 void CalendarService::initialize() {
   m_activeConfig = m_configService.config().calendar;
+  loadLastSynced();
   m_configService.addReloadCallback([this]() { onConfigReload(); });
   m_credentials.setChangeCallback([this]() {
+    // A Google account's authorization may have changed (accountStatus).
+    ++m_syncStatusRevision;
     notifyChanged();
     if (m_credentialChangeCallback) {
       m_credentialChangeCallback();
@@ -458,7 +462,7 @@ void CalendarService::notifyGoogleConnectFailure(const std::string& body) const 
   );
 }
 
-void CalendarService::notifyGoogleCredentialLocked() const {
+void CalendarService::notifyCredentialLocked() const {
   if (m_notifications == nullptr) {
     kLog.warn("locked calendar credential notification dropped: notification manager unavailable");
     return;
@@ -476,6 +480,7 @@ void CalendarService::onConfigReload() {
     return;
   }
   m_activeConfig = next;
+  loadLastSynced();
   updateVdirWatches();
   std::unordered_set<std::string> activeAccountIds;
   activeAccountIds.reserve(m_activeConfig.accounts.size());
@@ -633,6 +638,12 @@ void CalendarService::recordSyncResult(const std::string& accountId, calendar::S
   if (failure == calendar::SyncFailure::Cancelled) {
     return;
   }
+  if (failure == calendar::SyncFailure::None) {
+    const auto now = std::chrono::system_clock::now();
+    m_lastSynced[accountId] = now;
+    (void)m_configService.setStateString(kCalendarSyncOwner, accountId + "_last_synced", std::to_string(toUnix(now)));
+    ++m_syncStatusRevision;
+  }
   calendar::SyncFailureStreak& streak = m_syncStatus[accountId];
   if (!calendar::recordSyncResult(streak, failure)) {
     return;
@@ -641,49 +652,87 @@ void CalendarService::recordSyncResult(const std::string& accountId, calendar::S
   if (!streak.shown) {
     return;
   }
+  if (failure == calendar::SyncFailure::CredentialsLocked) {
+    // One keyring holds every account's credentials: one notification for all of them.
+    const bool notified = std::ranges::any_of(m_syncStatus, [&](const auto& entry) {
+      return entry.first != accountId
+          && entry.second.shown
+          && entry.second.failure == calendar::SyncFailure::CredentialsLocked;
+    });
+    if (!notified) {
+      notifyCredentialLocked();
+    }
+    return;
+  }
   const auto account = std::ranges::find(m_activeConfig.accounts, accountId, &CalendarConfig::Account::id);
   if (account != m_activeConfig.accounts.end()) {
     notifySyncFailure(*account, failure);
   }
 }
 
-std::optional<calendar::SyncFailure> CalendarService::accountSyncFailure(const std::string& accountId) const {
-  const auto it = m_syncStatus.find(accountId);
-  if (it == m_syncStatus.end() || !it->second.shown) {
-    return std::nullopt;
+CalendarService::AccountStatus CalendarService::accountStatus(const CalendarConfig::Account& account) const {
+  AccountStatus status;
+  if (const auto it = m_lastSynced.find(account.id); it != m_lastSynced.end()) {
+    status.lastSynced = it->second;
   }
-  return it->second.failure;
+  const bool google = account.type == "google";
+  // A Google account's stored authorization is known before any sync: when it was last looked up.
+  if (google && m_credentials.refreshTokenLocked(account.id)) {
+    status.failure = calendar::SyncFailure::CredentialsLocked;
+  } else if (google && m_credentials.refreshTokenMissing(account.id)) {
+    status.failure = calendar::SyncFailure::Credentials;
+  } else if (const auto it = m_syncStatus.find(account.id); it != m_syncStatus.end() && it->second.shown) {
+    status.failure = it->second.failure;
+  }
+  if (status.failure == calendar::SyncFailure::CredentialsLocked) {
+    status.action = AccountStatus::Action::Retry;
+  } else if (
+      google
+      && (status.failure == calendar::SyncFailure::Credentials
+          || status.failure == calendar::SyncFailure::Authentication)
+  ) {
+    status.action = AccountStatus::Action::Reconnect;
+  }
+  return status;
 }
 
 void CalendarService::notifySyncFailure(const CalendarConfig::Account& account, calendar::SyncFailure failure) const {
-  // A Google account's credentials have their own notification (a locked keyring) and Settings row (Reconnect).
-  if (account.type == "google"
-      && (failure == calendar::SyncFailure::Credentials || failure == calendar::SyncFailure::CredentialsLocked)) {
-    return;
-  }
   if (m_notifications == nullptr) {
     kLog.warn("calendar sync failure notification dropped: notification manager unavailable");
     return;
   }
-  // Google has no password to get wrong: a rejected grant is fixed by reconnecting.
-  const std::string_view reasonKey = account.type == "google" && failure == calendar::SyncFailure::Authentication
-      ? "notifications.internal.calendar-sync-failure-google-authentication"
-      : calendar::syncFailureMessageKey(failure);
   m_notifications->addInternal(
       i18n::tr("notifications.internal.calendar"), i18n::tr("notifications.internal.calendar-sync-failed-title"),
       i18n::tr(
           "notifications.internal.calendar-sync-failed-body", "account",
-          account.displayName.empty() ? account.id : account.displayName, "reason", i18n::tr(reasonKey)
+          account.displayName.empty() ? account.id : account.displayName, "reason",
+          i18n::tr(calendar::syncFailureMessageKey(failure, account.type == "google"))
       ),
       Urgency::Normal, kDefaultNotificationTimeout * 2, std::string("noctalia-glyph:calendar-x")
   );
 }
 
+void CalendarService::loadLastSynced() {
+  m_lastSynced.clear();
+  for (const CalendarConfig::Account& account : m_activeConfig.accounts) {
+    const auto stored = m_configService.stateString(kCalendarSyncOwner, account.id + "_last_synced");
+    if (!stored.has_value()) {
+      continue;
+    }
+    try {
+      m_lastSynced[account.id] = std::chrono::system_clock::time_point{std::chrono::seconds{std::stoll(*stored)}};
+    } catch (const std::exception&) {
+      kLog.debug("ignoring invalid last sync time for calendar account {}", account.id);
+    }
+  }
+}
+
 void CalendarService::rebuildSnapshot() {
   // Drop the sync status of accounts no longer configured.
-  const auto removed = std::erase_if(m_syncStatus, [&](const auto& entry) {
+  const auto unconfigured = [&](const auto& entry) {
     return !std::ranges::contains(m_activeConfig.accounts, entry.first, &CalendarConfig::Account::id);
-  });
+  };
+  const auto removed = std::erase_if(m_syncStatus, unconfigured) + std::erase_if(m_lastSynced, unconfigured);
   if (removed > 0) {
     ++m_syncStatusRevision;
   }
@@ -1022,14 +1071,6 @@ void CalendarService::refreshGoogleToken(
       [this, accountId, cb = std::move(cb)](
           security::SecretStoreStatus status, calendar::CalendarCredentialStore::Secret storedRefreshToken
       ) mutable {
-        if (status == security::SecretStoreStatus::DeniedOrLocked) {
-          if (!m_googleCredentialLockedNotificationShown) {
-            m_googleCredentialLockedNotificationShown = true;
-            notifyGoogleCredentialLocked();
-          }
-        } else if (!m_credentials.anyRefreshTokenLocked()) {
-          m_googleCredentialLockedNotificationShown = false;
-        }
         if (status != security::SecretStoreStatus::Success) {
           switch (status) {
           case security::SecretStoreStatus::NotFound:

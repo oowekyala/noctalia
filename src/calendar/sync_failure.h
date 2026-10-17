@@ -29,12 +29,10 @@ namespace calendar {
   [[nodiscard]] SyncFailure syncFailureFromResponse(const HttpResponse& response);
 
   // Failures that a later attempt may not repeat (the network not up yet after login or resume, a busy
-  // server, a keyring unlocked a moment later): shown only once they happen twice in a row.
+  // server): shown only once they happen twice in a row. A locked keyring is shown at once: it stays locked
+  // until someone unlocks it.
   [[nodiscard]] constexpr bool transientSyncFailure(SyncFailure failure) {
-    return failure == SyncFailure::Timeout
-        || failure == SyncFailure::Network
-        || failure == SyncFailure::Server
-        || failure == SyncFailure::CredentialsLocked;
+    return failure == SyncFailure::Timeout || failure == SyncFailure::Network || failure == SyncFailure::Server;
   }
 
   // An account's run of failed syncs, and whether its failure is shown (a notification, its Settings row): once
@@ -51,7 +49,8 @@ namespace calendar {
   // when what is shown changed: a failure starts or stops being shown, or the shown one becomes another.
   bool recordSyncResult(SyncFailureStreak& streak, SyncFailure result);
 
-  // The translation key of the failure's explanation (under notifications.internal).
-  [[nodiscard]] std::string_view syncFailureMessageKey(SyncFailure failure);
+  // The translation key of the failure's explanation (under notifications.internal). A Google account has no
+  // password: its rejected or missing credentials are fixed by reconnecting it.
+  [[nodiscard]] std::string_view syncFailureMessageKey(SyncFailure failure, bool google = false);
 
 } // namespace calendar

@@ -88,14 +88,16 @@ color = "#FF0000"
 
 ## Sync failures
 
-When an account stops syncing, Noctalia sends one notification saying why: the server rejected the username or
-password, no calendar was found at the configured address, the server took too long to respond, and so on. The
-account's row in **Settings → Calendar → Accounts** shows the same reason until a sync succeeds; syncs keep being
-retried at the refresh interval, and the events last synced stay shown meanwhile.
+Each account's row in **Settings → Calendar → Accounts** shows its status: when it last synced, or why it is failing
+and what fixes it. Most failures are fixed with **Edit**; a locked keyring with **Retry** once it is unlocked; a Google
+account whose authorization is missing or was revoked with **Reconnect**. Syncs keep being retried at the refresh
+interval, and the events last synced stay shown meanwhile.
 
-Failures that often clear on their own, such as an unreachable server, a timeout, a server error, or a locked keyring,
-are reported only when two syncs in a row fail, so a sync attempted before the network is up after login or resume
-doesn't raise an alarm. Each failure is notified once, until it changes or the account syncs again.
+A failing account also sends one notification saying why: the server rejected the username or password, no calendar
+was found at the configured address, the server took too long to respond, and so on. Failures that often clear on their
+own, such as an unreachable server, a timeout or a server error, are reported only when two syncs in a row fail, so a
+sync attempted before the network is up after login or resume doesn't raise an alarm. Each failure is notified once,
+until it changes or the account syncs again; a locked keyring is notified once for all the accounts it holds.
 
 ## Merging duplicate events
 

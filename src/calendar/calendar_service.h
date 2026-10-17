@@ -100,17 +100,23 @@ public:
   [[nodiscard]] const std::string& connectingAccountId() const noexcept { return m_connect.accountId; }
   [[nodiscard]] calendar::CredentialState credentialState() const noexcept { return m_credentials.state(); }
   [[nodiscard]] bool credentialMigrationPending() const noexcept { return m_credentials.migrationPending(); }
-  [[nodiscard]] bool googleAccountNeedsReconnect(const std::string& accountId) const {
-    return m_credentials.refreshTokenMissing(accountId);
-  }
-  [[nodiscard]] bool googleAccountCredentialLocked(const std::string& accountId) const {
-    return m_credentials.refreshTokenLocked(accountId);
-  }
   [[nodiscard]] bool hasMissingRefreshTokens() const { return m_credentials.anyRefreshTokenMissing(); }
-  // Why an account's sync is failing, once that is worth showing: a failure that a retry won't fix, or a
-  // transient one (calendar::transientSyncFailure) that happened twice in a row. Empty while it syncs.
-  [[nodiscard]] std::optional<calendar::SyncFailure> accountSyncFailure(const std::string& accountId) const;
-  // Changes whenever an account's shown failure does, so a view can refresh only then.
+  // What an account's Settings row shows, the same way for every account type: why its sync is failing and
+  // what fixes it, or when it last synced.
+  struct AccountStatus {
+    enum class Action : std::uint8_t {
+      Edit,      // in the account's settings
+      Retry,     // once the keyring holding its credentials is unlocked
+      Reconnect, // a Google account's authorization
+    };
+    // Shown once worth showing: a failure that a retry won't fix, or a transient one
+    // (calendar::transientSyncFailure) that happened twice in a row.
+    std::optional<calendar::SyncFailure> failure;
+    std::optional<std::chrono::system_clock::time_point> lastSynced;
+    Action action = Action::Edit;
+  };
+  [[nodiscard]] AccountStatus accountStatus(const CalendarConfig::Account& account) const;
+  // Changes whenever an account's status does, so a view can refresh only then.
   [[nodiscard]] std::uint64_t syncStatusRevision() const noexcept { return m_syncStatusRevision; }
   [[nodiscard]] CachePersistenceState cachePersistenceState() const noexcept { return m_cachePersistenceState; }
   [[nodiscard]] bool cacheMigrationPending() const noexcept { return m_cacheMigrationPending; }
@@ -131,10 +137,12 @@ private:
   void notifyChanged();
   void startRefresh();
   void accountDone(const std::string& accountId, calendar::SyncFailure failure, std::vector<CalendarEvent> events);
-  // Tracks the account's failures (calendar::SyncFailureStreak), and notifies once one starts being shown, or
-  // becomes another.
+  // Tracks the account's failures (calendar::SyncFailureStreak) and last successful sync, and notifies once a
+  // failure starts being shown, or becomes another.
   void recordSyncResult(const std::string& accountId, calendar::SyncFailure failure);
   void notifySyncFailure(const CalendarConfig::Account& account, calendar::SyncFailure failure) const;
+  void notifyCredentialLocked() const;
+  void loadLastSynced();
   void rebuildSnapshot();
   void scheduleNextRefresh();
 
@@ -152,7 +160,6 @@ private:
   void googleFetchWithToken(const std::string& accountId, const std::string& accessToken, bool allowRefreshRetry);
   void pollConnect();
   void notifyGoogleConnectFailure(const std::string& body) const;
-  void notifyGoogleCredentialLocked() const;
   void initializeCredentials();
   [[nodiscard]] calendar::CredentialMigration credentialMigration();
   void storeGoogleTokens(
@@ -199,8 +206,8 @@ private:
   CachePersistenceState m_cachePersistenceState = CachePersistenceState::Opening;
   bool m_cacheMigrationPending = false;
   std::size_t m_pendingAccounts = 0;
-  bool m_googleCredentialLockedNotificationShown = false;
   std::map<std::string, calendar::SyncFailureStreak> m_syncStatus;
+  std::map<std::string, std::chrono::system_clock::time_point> m_lastSynced;
   std::uint64_t m_syncStatusRevision = 0;
   ConnectFlow m_connect;
   calendar::CalDavClient m_caldav;
