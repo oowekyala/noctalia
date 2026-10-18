@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <print>
 #include <string>
 #include <string_view>
@@ -43,6 +44,23 @@ namespace {
         rgb[i + 0] = color[0];
         rgb[i + 1] = color[1];
         rgb[i + 2] = color[2];
+      }
+    }
+    return rgb;
+  }
+
+  // A wallpaper of one vivid hue (HSL degrees), with a smaller patch of another.
+  std::vector<uint8_t> makeHueBuffer(double hue) {
+    const auto main = noctalia::theme::Color::fromHsl(hue, 0.65, 0.55);
+    const auto other = noctalia::theme::Color::fromHsl(std::fmod(hue + 140.0, 360.0), 0.55, 0.45);
+    std::vector<uint8_t> rgb(112U * 112U * 3U);
+    for (std::size_t y = 0; y < 112; ++y) {
+      for (std::size_t x = 0; x < 112; ++x) {
+        const auto& color = x < 84 ? main : other;
+        const std::size_t i = (y * 112U + x) * 3U;
+        rgb[i + 0] = static_cast<uint8_t>(color.r);
+        rgb[i + 1] = static_cast<uint8_t>(color.g);
+        rgb[i + 2] = static_cast<uint8_t>(color.b);
       }
     }
     return rgb;
@@ -266,8 +284,9 @@ namespace {
     return ok;
   }
 
-  // The terminal schemes only replace the six terminal colors, every one readable on the terminal
-  // background, with red and green told apart even by the most muted schemes.
+  // The terminal schemes only replace the sixteen terminal colors: the six chromatic ones readable
+  // on the terminal background, with red and green told apart even by the most muted schemes, and
+  // black and white ordered from dark to light, black readable in light mode.
   bool checkTerminalSchemes() {
     using noctalia::theme::Scheme;
 
@@ -276,6 +295,12 @@ namespace {
         Scheme::Vibrant,   Scheme::Faithful, Scheme::Soft,       Scheme::Dysfunctional, Scheme::Muted,
     };
     constexpr std::array<std::string_view, 6> slots{"red", "yellow", "green", "cyan", "blue", "magenta"};
+    constexpr std::array<std::string_view, 4> neutrals{
+        "terminal_normal_black", "terminal_bright_black", "terminal_normal_white", "terminal_bright_white"
+    };
+    const auto lightness = [](uint32_t argb) {
+      return noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(argb)).lightness;
+    };
 
     bool ok = true;
     const auto rgb = makeColorfulBuffer();
@@ -293,9 +318,14 @@ namespace {
       const auto check = [&](const auto& before, const auto& after, std::string_view mode) {
         const std::string label = name + " " + std::string(mode);
         for (const auto& [key, value] : before) {
-          const bool replaced = std::ranges::any_of(slots, [&](std::string_view slot) {
-            return key == "terminal_normal_" + std::string(slot) || key == "terminal_bright_" + std::string(slot);
-          });
+          const bool replaced = std::ranges::any_of(
+                                    slots,
+                                    [&](std::string_view slot) {
+                                      return key == "terminal_normal_" + std::string(slot)
+                                          || key == "terminal_bright_" + std::string(slot);
+                                    }
+                                )
+              || std::ranges::find(neutrals, key) != neutrals.end();
           ok = expect(replaced || after.at(key) == value, label + ": keeps " + key) && ok;
         }
         const auto background = noctalia::theme::Color::fromArgb(after.at("terminal_background"));
@@ -318,6 +348,18 @@ namespace {
         const auto green = lab(after.at("terminal_normal_green"));
         const double distance = std::hypot(red[0] - green[0], std::hypot(red[1] - green[1], red[2] - green[2]));
         ok = expect(distance >= 0.06, label + ": red and green are distinguishable") && ok;
+
+        for (std::size_t i = 0; i + 1 < neutrals.size(); ++i) {
+          ok = expect(
+                   lightness(after.at(std::string(neutrals[i]))) < lightness(after.at(std::string(neutrals[i + 1]))),
+                   label + ": " + std::string(neutrals[i]) + " is darker than " + std::string(neutrals[i + 1])
+               )
+              && ok;
+        }
+        if (mode.ends_with("light")) {
+          const auto black = noctalia::theme::Color::fromArgb(after.at("terminal_normal_black"));
+          ok = expect(noctalia::theme::contrastRatio(black, background) >= 4.5, label + ": black is readable") && ok;
+        }
       };
       for (const TerminalScheme terminal : {TerminalScheme::PinnedHues, TerminalScheme::Balanced}) {
         auto regenerated = *generated;
@@ -325,6 +367,40 @@ namespace {
         const std::string terminalName{enumToKey(kTerminalSchemes, terminal)};
         check(generated->dark, regenerated.dark, terminalName + " dark");
         check(generated->light, regenerated.light, terminalName + " light");
+      }
+    }
+
+    // Whatever the wallpaper's hue, neighbouring colors stay apart in hue, and every bright color
+    // differs from its normal one.
+    for (int hue = 0; hue < 360; hue += 15) {
+      const auto buffer = makeHueBuffer(hue);
+      for (const Scheme scheme : schemes) {
+        auto palette = noctalia::theme::generate(buffer, scheme);
+        if (!palette.has_value()) {
+          continue;
+        }
+        noctalia::theme::applyTerminalScheme(*palette, TerminalScheme::PinnedHues, scheme);
+        for (const auto* tokens : {&palette->dark, &palette->light}) {
+          const std::string label = std::string(noctalia::theme::schemeToString(scheme))
+              + " "
+              + (tokens == &palette->dark ? "dark" : "light")
+              + " on hue "
+              + std::to_string(hue);
+          std::array<double, slots.size()> hues{};
+          for (std::size_t i = 0; i < slots.size(); ++i) {
+            const auto normal = tokens->at("terminal_normal_" + std::string(slots[i]));
+            const auto bright = tokens->at("terminal_bright_" + std::string(slots[i]));
+            ok = expect(normal != bright, label + ": bright " + std::string(slots[i]) + " differs from normal") && ok;
+            hues[i] = noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(normal)).hueRadians
+                * 180.0
+                / std::numbers::pi;
+          }
+          for (std::size_t i = 0; i < slots.size(); ++i) {
+            const double gap = std::fmod(hues[(i + 1) % slots.size()] - hues[i] + 720.0, 360.0);
+            ok = expect(gap >= 25.0, label + ": " + std::string(slots[i]) + " and the next color are apart in hue")
+                && ok;
+          }
+        }
       }
     }
     return ok;

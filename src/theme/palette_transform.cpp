@@ -8,12 +8,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace noctalia::theme {
 
@@ -45,8 +47,8 @@ namespace noctalia::theme {
       return hct.ToInt();
     }
 
-    // The six terminal colors, each with its own hue (OKLCH degrees) and, with PinnedHues, the
-    // most it may turn towards its target (see harmonyTargets).
+    // The six terminal colors, in hue order, each with its own hue (OKLCH degrees) and, with
+    // PinnedHues, the most it may turn towards its target (see harmonyTargets).
     struct PinnedHue {
       std::string_view name;
       double hue;
@@ -104,6 +106,10 @@ namespace noctalia::theme {
     // their chroma at this fraction of the normal one.
     constexpr double kBrightLightnessStep = 0.08;
     constexpr double kBrightChromaRatio = 0.8;
+    // Neighbouring colors stay at least this far apart in hue (degrees), however far the scheme
+    // lets them rotate: each turns at most halfway into the gap between their pinned hues, less
+    // half of this.
+    constexpr double kMinHueGap = 30.0;
     // Below this chroma the seed is nearly gray and its hue says little; the rotation is
     // scaled down to nothing as the chroma approaches zero.
     constexpr double kSeedFullChroma = 0.08;
@@ -111,6 +117,16 @@ namespace noctalia::theme {
     [[nodiscard]] double wrapDegrees(double degrees) {
       degrees = std::fmod(degrees, 360.0);
       return degrees < 0.0 ? degrees + 360.0 : degrees;
+    }
+
+    // How far kPinnedHues[index] may turn down and up in hue without coming closer to its
+    // neighbours than kMinHueGap, when they turn towards it as well: halfway into each gap, less
+    // half of kMinHueGap.
+    [[nodiscard]] std::pair<double, double> neighbourRoom(std::size_t index) {
+      const double hue = kPinnedHues[index].hue;
+      const double previous = kPinnedHues[(index + kPinnedHues.size() - 1) % kPinnedHues.size()].hue;
+      const double next = kPinnedHues[(index + 1) % kPinnedHues.size()].hue;
+      return {(wrapDegrees(hue - previous) - kMinHueGap) / 2.0, (wrapDegrees(next - hue) - kMinHueGap) / 2.0};
     }
 
     // The color of (chroma, hue) whose lightness is the closest to the background's at which
@@ -202,7 +218,8 @@ namespace noctalia::theme {
         double move = signedArc(pinned.hue, seedHue + goal.offset);
         if (!balanced) {
           const double cap = pinned.cap * preset.capScale;
-          move = std::clamp(move / 2.0, -cap, cap);
+          const auto [down, up] = neighbourRoom(i);
+          move = std::clamp(move / 2.0, -std::min(cap, down), std::min(cap, up));
         }
         const double hueRadians = wrapDegrees(pinned.hue + move * pull) * std::numbers::pi / 180.0;
         double chroma = preset.chroma * goal.chromaFactor;
@@ -215,6 +232,42 @@ namespace noctalia::theme {
             gamutMapToSrgb({std::clamp(normalLch.lightness + step, 0.0, 1.0), chroma * kBrightChromaRatio, hueRadians});
         tokens["terminal_normal_" + std::string(pinned.name)] = normal.toArgb();
         tokens["terminal_bright_" + std::string(pinned.name)] = bright.toArgb();
+      }
+
+      // Black and white the usual way round in both modes, as in most hand-made terminal themes:
+      // black dark, white light, and each bright one lighter. Dark mode: black is near the
+      // background (status lines use it as one) and white is text. Light mode: black is text and
+      // white near the background, so white text is faint there.
+      const auto role = [&](const char* key) -> std::optional<Color> {
+        const auto it = tokens.find(key);
+        return it == tokens.end() ? std::nullopt : std::optional(Color::fromArgb(it->second));
+      };
+      const auto set = [&](const char* key, std::optional<Color> color) {
+        if (color.has_value()) {
+          tokens[key] = color->toArgb();
+        }
+      };
+      const std::optional<Color> outline = role("outline");
+      if (dark) {
+        set("terminal_normal_black", role("surface_variant"));
+        set("terminal_bright_black", outline);
+        set("terminal_normal_white", role("on_surface_variant"));
+        set("terminal_bright_white", role("on_surface"));
+      } else {
+        const std::optional<Color> surfaceVariant = role("surface_variant");
+        set("terminal_normal_black", role("on_surface_variant"));
+        set("terminal_bright_black", outline);
+        // Halfway between bright black and bright white: no role sits there with every generator
+        // (the custom schemes' outline_variant is as dark as outline).
+        if (outline.has_value() && surfaceVariant.has_value()) {
+          const Oklch low = toOklch(*outline);
+          const Oklch high = toOklch(*surfaceVariant);
+          set("terminal_normal_white",
+              gamutMapToSrgb(
+                  {(low.lightness + high.lightness) / 2.0, (low.chroma + high.chroma) / 2.0, high.hueRadians}
+              ));
+        }
+        set("terminal_bright_white", surfaceVariant);
       }
     }
 

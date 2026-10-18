@@ -138,11 +138,11 @@ Picks how the terminal colors (`terminal_normal_*` and `terminal_bright_*`) are 
 | Value | Description |
 |-------|-------------|
 | `default` | The generator's own terminal colors, which reuse its accent roles |
-| `pinned-hues` | Red, yellow, green, cyan, blue and magenta each keep their own hue, rotated slightly toward the wallpaper's, with enough contrast on the terminal background |
+| `pinned-hues` | Red, yellow, green, cyan, blue and magenta each keep their own hue, rotated slightly toward the wallpaper's, with enough contrast on the terminal background; black and white are taken from the palette's grays |
 | `balanced` | One dominant hue family, like most hand-made color schemes: four of the six colors around the wallpaper's hue, two around its complement, with red and green always in different groups |
 
 The generators fill the terminal slots from their accent roles, so with some schemes several of them end up as shades of one hue.
-`pinned-hues` and `balanced` replace those six colors (normal and bright) and keep black, white, foreground, cursor and selection. Both follow the wallpaper's most prominent vivid color, whatever color `wallpaper_scheme` built the rest of the palette from. How saturated they are, and how far `pinned-hues` follows the wallpaper's hue, depends on `wallpaper_scheme`: `muted` and `soft` stay subdued, `vibrant` more saturated. With `balanced`, "red" and "green" are only names: on a blue wallpaper they may be violet and olive. They stay far apart, so diffs remain legible; for a color that is always red, the shell uses the `error` role.
+`pinned-hues` and `balanced` replace all sixteen colors and keep foreground, cursor and selection. The bright hues are further from the background than the normal ones. Black is dark and white light in both modes, as in most terminal themes, each bright one lighter; so in light mode white text is faint. Both follow the wallpaper's most prominent vivid color, whatever color `wallpaper_scheme` built the rest of the palette from. How saturated they are, and how far `pinned-hues` follows the wallpaper's hue, depends on `wallpaper_scheme`: `muted` and `soft` stay subdued, `vibrant` more saturated. With `balanced`, "red" and "green" are only names: on a blue wallpaper they may be violet and olive. They stay far apart, so diffs remain legible; for a color that is always red, the shell uses the `error` role.
 Other palette sources bring terminal colors of their own and are not affected.
 It runs after `pure_black_dark` and the high-contrast option, so the colors fit the final background.
 

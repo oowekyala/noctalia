@@ -1723,13 +1723,14 @@ enum class TerminalScheme : std::uint8_t {
   Default = 0,
   // Red, yellow, green, cyan, blue and magenta (normal and bright) each start from a fixed hue, so
   // that they stay in their own hue range, and are turned towards a target around the wallpaper's
-  // accent by at most a capped amount (Material's "harmonize"), less so when it is nearly gray. Their lightness
-  // is then searched for a contrast target on the final terminal background. Chroma and the size
+  // accent by at most a capped amount (Material's "harmonize"), less so when it is nearly gray, and
+  // never to within 30 degrees of a neighbour. Their lightness is then searched for a contrast target on the final terminal background. Chroma and the size
   // of the rotations depend on the wallpaper scheme (Muted and Soft are less saturated and rotate
   // less, Vibrant is more saturated, Dysfunctional rotates more; Monochrome is nearly gray). Red
   // and green keep a minimum chroma even with the muted schemes, so that eg git diffs stay
   // legible, except with Monochrome, where they are as faint as the rest but still told apart.
-  // Black, white, foreground, cursor and selection are kept.
+  // Black and white come from the palette's neutral roles, black dark and white light in both
+  // modes, each bright one lighter. Foreground, cursor and selection are kept.
   PinnedHues = 1,
   // The same colors in one dominant hue family, as most hand-made color schemes have: four of them
   // around the wallpaper's accent and two around its complement, exactly one of red and green
