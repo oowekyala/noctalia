@@ -284,8 +284,9 @@ namespace {
     return ok;
   }
 
-  // Pinned hues only replaces the six terminal colors, every one readable on the terminal background,
-  // with red and green told apart even by the most muted schemes.
+  // Pinned hues only replaces the sixteen terminal colors: the six chromatic ones readable on the
+  // terminal background, with red and green told apart even by the most muted schemes, and black
+  // and white ordered from dark to light, black readable in light mode.
   bool checkPinnedHues() {
     using noctalia::theme::Scheme;
 
@@ -294,6 +295,12 @@ namespace {
         Scheme::Vibrant,   Scheme::Faithful, Scheme::Soft,       Scheme::Dysfunctional, Scheme::Muted,
     };
     constexpr std::array<std::string_view, 6> slots{"red", "yellow", "green", "cyan", "blue", "magenta"};
+    constexpr std::array<std::string_view, 4> neutrals{
+        "terminal_normal_black", "terminal_bright_black", "terminal_normal_white", "terminal_bright_white"
+    };
+    const auto lightness = [](uint32_t argb) {
+      return noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(argb)).lightness;
+    };
 
     bool ok = true;
     const auto rgb = makeColorfulBuffer();
@@ -313,9 +320,14 @@ namespace {
       const auto check = [&](const auto& before, const auto& after, std::string_view mode) {
         const std::string label = name + " " + std::string(mode);
         for (const auto& [key, value] : before) {
-          const bool replaced = std::ranges::any_of(slots, [&](std::string_view slot) {
-            return key == "terminal_normal_" + std::string(slot) || key == "terminal_bright_" + std::string(slot);
-          });
+          const bool replaced = std::ranges::any_of(
+                                    slots,
+                                    [&](std::string_view slot) {
+                                      return key == "terminal_normal_" + std::string(slot)
+                                          || key == "terminal_bright_" + std::string(slot);
+                                    }
+                                )
+              || std::ranges::find(neutrals, key) != neutrals.end();
           ok = expect(replaced || after.at(key) == value, label + ": keeps " + key) && ok;
         }
         const auto background = noctalia::theme::Color::fromArgb(after.at("terminal_background"));
@@ -338,6 +350,18 @@ namespace {
         const auto green = lab(after.at("terminal_normal_green"));
         const double distance = std::hypot(red[0] - green[0], std::hypot(red[1] - green[1], red[2] - green[2]));
         ok = expect(distance >= 0.06, label + ": red and green are distinguishable") && ok;
+
+        for (std::size_t i = 0; i + 1 < neutrals.size(); ++i) {
+          ok = expect(
+                   lightness(after.at(std::string(neutrals[i]))) < lightness(after.at(std::string(neutrals[i + 1]))),
+                   label + ": " + std::string(neutrals[i]) + " is darker than " + std::string(neutrals[i + 1])
+               )
+              && ok;
+        }
+        if (mode == "light") {
+          const auto black = noctalia::theme::Color::fromArgb(after.at("terminal_normal_black"));
+          ok = expect(noctalia::theme::contrastRatio(black, background) >= 4.5, label + ": black is readable") && ok;
+        }
       };
       check(generated->dark, pinned.dark, "dark");
       check(generated->light, pinned.light, "light");

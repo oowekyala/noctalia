@@ -138,10 +138,10 @@ Picks how the terminal colors (`terminal_normal_*` and `terminal_bright_*`) are 
 | Value | Description |
 |-------|-------------|
 | `default` | The generator's own terminal colors, which reuse its accent roles |
-| `pinned-hues` | Red, yellow, green, cyan, blue and magenta each keep their own hue, rotated slightly toward the wallpaper's, with enough contrast on the terminal background |
+| `pinned-hues` | Red, yellow, green, cyan, blue and magenta each keep their own hue, rotated slightly toward the wallpaper's, with enough contrast on the terminal background; black and white are taken from the palette's grays |
 
 The generators fill the terminal slots from their accent roles, so with some schemes several of them end up as shades of one hue.
-`pinned-hues` replaces those six colors (normal and bright) and keeps black, white, foreground, cursor and selection. How saturated they are, and how far they follow the wallpaper's hue, depends on `wallpaper_scheme`: `muted` and `soft` stay subdued, `vibrant` more saturated.
+`pinned-hues` replaces all sixteen colors and keeps foreground, cursor and selection. The bright hues are further from the background than the normal ones. Black is dark and white light in both modes, as in most terminal themes, each bright one lighter; so in light mode white text is faint. How saturated they are, and how far they follow the wallpaper's hue, depends on `wallpaper_scheme`: `muted` and `soft` stay subdued, `vibrant` more saturated.
 Other palette sources bring terminal colors of their own and are not affected.
 It runs after `pure_black_dark` and the high-contrast option, so the colors fit the final background.
 

@@ -1719,7 +1719,8 @@ enum class TerminalScheme : std::uint8_t {
   // less, Vibrant is more saturated, Dysfunctional rotates more; Monochrome is nearly gray). Red
   // and green keep a minimum chroma even with the muted schemes, so that eg git diffs stay
   // legible, except with Monochrome, where they are as faint as the rest but still told apart.
-  // Black, white, foreground, cursor and selection are kept.
+  // Black and white come from the palette's neutral roles, black dark and white light in both
+  // modes, each bright one lighter. Foreground, cursor and selection are kept.
   PinnedHues = 1,
 };
 

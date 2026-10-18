@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -170,6 +171,42 @@ namespace noctalia::theme {
             gamutMapToSrgb({std::clamp(normalLch.lightness + step, 0.0, 1.0), chroma * kBrightChromaRatio, hueRadians});
         tokens["terminal_normal_" + std::string(pinned.name)] = normal.toArgb();
         tokens["terminal_bright_" + std::string(pinned.name)] = bright.toArgb();
+      }
+
+      // Black and white the usual way round in both modes, as in most hand-made terminal themes:
+      // black dark, white light, and each bright one lighter. Dark mode: black is near the
+      // background (status lines use it as one) and white is text. Light mode: black is text and
+      // white near the background, so white text is faint there.
+      const auto role = [&](const char* key) -> std::optional<Color> {
+        const auto it = tokens.find(key);
+        return it == tokens.end() ? std::nullopt : std::optional(Color::fromArgb(it->second));
+      };
+      const auto set = [&](const char* key, std::optional<Color> color) {
+        if (color.has_value()) {
+          tokens[key] = color->toArgb();
+        }
+      };
+      const std::optional<Color> outline = role("outline");
+      if (dark) {
+        set("terminal_normal_black", role("surface_variant"));
+        set("terminal_bright_black", outline);
+        set("terminal_normal_white", role("on_surface_variant"));
+        set("terminal_bright_white", role("on_surface"));
+      } else {
+        const std::optional<Color> surfaceVariant = role("surface_variant");
+        set("terminal_normal_black", role("on_surface_variant"));
+        set("terminal_bright_black", outline);
+        // Halfway between bright black and bright white: no role sits there with every generator
+        // (the custom schemes' outline_variant is as dark as outline).
+        if (outline.has_value() && surfaceVariant.has_value()) {
+          const Oklch low = toOklch(*outline);
+          const Oklch high = toOklch(*surfaceVariant);
+          set("terminal_normal_white",
+              gamutMapToSrgb(
+                  {(low.lightness + high.lightness) / 2.0, (low.chroma + high.chroma) / 2.0, high.hueRadians}
+              ));
+        }
+        set("terminal_bright_white", surfaceVariant);
       }
     }
 

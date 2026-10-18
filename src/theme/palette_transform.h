@@ -22,10 +22,9 @@ namespace noctalia::theme {
   void applyHighContrast(TokenMap& tokens, bool isDark);
   void applyHighContrast(GeneratedPalette& palette);
 
-  // Replaces the normal and bright red, yellow, green, cyan, blue and magenta terminal tokens
-  // according to `terminal` (see TerminalScheme); `base` is the scheme the palette was
-  // generated with, which sets chroma and rotation. Everything else, black, white,
-  // foreground, cursor and selection included, is kept. Meant to run after the other
+  // Replaces the sixteen normal and bright terminal colors according to `terminal` (see
+  // TerminalScheme); `base` is the scheme the palette was generated with, which sets chroma and
+  // rotation. Foreground, cursor and selection are kept. Meant to run after the other
   // transforms: the colors are searched against the final terminal_background. A palette
   // without source_color or terminal_background, and TerminalScheme::Default, are left as is.
   void applyTerminalScheme(GeneratedPalette& palette, TerminalScheme terminal, Scheme base);
