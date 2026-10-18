@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <print>
 #include <string>
 #include <string_view>
@@ -43,6 +44,23 @@ namespace {
         rgb[i + 0] = color[0];
         rgb[i + 1] = color[1];
         rgb[i + 2] = color[2];
+      }
+    }
+    return rgb;
+  }
+
+  // A wallpaper of one vivid hue (HSL degrees), with a smaller patch of another.
+  std::vector<uint8_t> makeHueBuffer(double hue) {
+    const auto main = noctalia::theme::Color::fromHsl(hue, 0.65, 0.55);
+    const auto other = noctalia::theme::Color::fromHsl(std::fmod(hue + 140.0, 360.0), 0.55, 0.45);
+    std::vector<uint8_t> rgb(112U * 112U * 3U);
+    for (std::size_t y = 0; y < 112; ++y) {
+      for (std::size_t x = 0; x < 112; ++x) {
+        const auto& color = x < 84 ? main : other;
+        const std::size_t i = (y * 112U + x) * 3U;
+        rgb[i + 0] = static_cast<uint8_t>(color.r);
+        rgb[i + 1] = static_cast<uint8_t>(color.g);
+        rgb[i + 2] = static_cast<uint8_t>(color.b);
       }
     }
     return rgb;
@@ -323,6 +341,40 @@ namespace {
       };
       check(generated->dark, pinned.dark, "dark");
       check(generated->light, pinned.light, "light");
+    }
+
+    // Whatever the wallpaper's hue, neighbouring colors stay apart in hue, and every bright color
+    // differs from its normal one.
+    for (int hue = 0; hue < 360; hue += 15) {
+      const auto buffer = makeHueBuffer(hue);
+      for (const Scheme scheme : schemes) {
+        auto palette = noctalia::theme::generate(buffer, scheme);
+        if (!palette.has_value()) {
+          continue;
+        }
+        noctalia::theme::applyTerminalScheme(*palette, TerminalScheme::PinnedHues, scheme);
+        for (const auto* tokens : {&palette->dark, &palette->light}) {
+          const std::string label = std::string(noctalia::theme::schemeToString(scheme))
+              + " "
+              + (tokens == &palette->dark ? "dark" : "light")
+              + " on hue "
+              + std::to_string(hue);
+          std::array<double, slots.size()> hues{};
+          for (std::size_t i = 0; i < slots.size(); ++i) {
+            const auto normal = tokens->at("terminal_normal_" + std::string(slots[i]));
+            const auto bright = tokens->at("terminal_bright_" + std::string(slots[i]));
+            ok = expect(normal != bright, label + ": bright " + std::string(slots[i]) + " differs from normal") && ok;
+            hues[i] = noctalia::theme::toOklch(noctalia::theme::Color::fromArgb(normal)).hueRadians
+                * 180.0
+                / std::numbers::pi;
+          }
+          for (std::size_t i = 0; i < slots.size(); ++i) {
+            const double gap = std::fmod(hues[(i + 1) % slots.size()] - hues[i] + 720.0, 360.0);
+            ok = expect(gap >= 25.0, label + ": " + std::string(slots[i]) + " and the next color are apart in hue")
+                && ok;
+          }
+        }
+      }
     }
     return ok;
   }

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <string>
@@ -43,8 +44,8 @@ namespace noctalia::theme {
       return hct.ToInt();
     }
 
-    // TerminalScheme::PinnedHues. Each color has a fixed hue (OKLCH degrees) and may be
-    // rotated towards the seed's hue by half their difference, at most `cap` degrees.
+    // TerminalScheme::PinnedHues. Each color has a fixed hue (OKLCH degrees), in hue order, and may
+    // be rotated towards the seed's hue by half their difference, at most `cap` degrees.
     struct PinnedHue {
       std::string_view name;
       double hue;
@@ -102,6 +103,10 @@ namespace noctalia::theme {
     // their chroma at this fraction of the normal one.
     constexpr double kBrightLightnessStep = 0.08;
     constexpr double kBrightChromaRatio = 0.8;
+    // Neighbouring colors stay at least this far apart in hue (degrees), however far the scheme
+    // lets them rotate: each turns at most halfway into the gap between their pinned hues, less
+    // half of this.
+    constexpr double kMinHueGap = 30.0;
     // Below this chroma the seed is nearly gray and its hue says little; the rotation is
     // scaled down to nothing as the chroma approaches zero.
     constexpr double kSeedFullChroma = 0.08;
@@ -111,10 +116,16 @@ namespace noctalia::theme {
       return degrees < 0.0 ? degrees + 360.0 : degrees;
     }
 
-    // `hue` rotated towards `seedHue` by half their difference, at most `cap`, scaled by `pull`.
-    [[nodiscard]] double harmonizedHue(double hue, double seedHue, double cap, double pull) {
+    // The pinned hue of kPinnedHues[index] rotated towards `seedHue` by half their difference, at
+    // most `cap` and no closer to its neighbours than kMinHueGap allows, scaled by `pull`.
+    [[nodiscard]] double harmonizedHue(std::size_t index, double seedHue, double cap, double pull) {
+      const double hue = kPinnedHues[index].hue;
+      const double previous = kPinnedHues[(index + kPinnedHues.size() - 1) % kPinnedHues.size()].hue;
+      const double next = kPinnedHues[(index + 1) % kPinnedHues.size()].hue;
+      const double down = std::min(cap, (wrapDegrees(hue - previous) - kMinHueGap) / 2.0);
+      const double up = std::min(cap, (wrapDegrees(next - hue) - kMinHueGap) / 2.0);
       const double diff = wrapDegrees(seedHue - hue + 180.0) - 180.0;
-      return wrapDegrees(hue + std::clamp(diff / 2.0, -cap, cap) * pull);
+      return wrapDegrees(hue + std::clamp(diff / 2.0, -down, up) * pull);
     }
 
     // The color of (chroma, hue) whose lightness is the closest to the background's at which
@@ -148,9 +159,10 @@ namespace noctalia::theme {
       const double target = dark ? kPinnedContrastDark : kPinnedContrastLight;
       const double step = dark ? kBrightLightnessStep : -kBrightLightnessStep;
 
-      for (const PinnedHue& pinned : kPinnedHues) {
+      for (std::size_t i = 0; i < kPinnedHues.size(); ++i) {
+        const PinnedHue& pinned = kPinnedHues[i];
         const double hueRadians =
-            harmonizedHue(pinned.hue, seedHue, pinned.cap * preset.capScale, pull) * std::numbers::pi / 180.0;
+            harmonizedHue(i, seedHue, pinned.cap * preset.capScale, pull) * std::numbers::pi / 180.0;
         const double chroma = pinned.keepDistinct ? std::max(preset.chroma, preset.distinctChroma) : preset.chroma;
         const Color normal = colorForContrast(chroma, hueRadians, background, target);
         const Oklch normalLch = toOklch(normal);
