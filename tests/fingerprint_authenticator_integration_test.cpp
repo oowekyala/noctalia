@@ -4,6 +4,7 @@
 #include "tests/test_check.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -44,11 +45,17 @@ namespace {
               sdbus::registerMethod("Claim")
                   .withInputParamNames("username")
                   .implementedAs([this](const std::string& /*username*/) { claim(currentSender()); }),
-              sdbus::registerMethod("Release").implementedAs([this]() { requireOwner("Release", true); }),
+              sdbus::registerMethod("Release").implementedAs([this]() {
+                hang(releaseDelayMs);
+                requireOwner("Release", true);
+              }),
               sdbus::registerMethod("VerifyStart")
                   .withInputParamNames("finger_name")
                   .implementedAs([this](const std::string& /*fingerName*/) { requireOwner("VerifyStart", false); }),
-              sdbus::registerMethod("VerifyStop").implementedAs([this]() { requireOwner("VerifyStop", false); }),
+              sdbus::registerMethod("VerifyStop").implementedAs([this]() {
+                hang(verifyStopDelayMs);
+                requireOwner("VerifyStop", false);
+              }),
               sdbus::registerSignal("VerifyStatus").withParameters<std::string, bool>("result", "done")
           )
           .forInterface(kDeviceInterface);
@@ -62,6 +69,13 @@ namespace {
 
     void emitVerifyStatus(const std::string& result, bool done) {
       device->emitSignal("VerifyStatus").onInterface(kDeviceInterface).withArguments(result, done);
+    }
+
+    // fprintd cancels the sensor operation before answering Release/VerifyStop; with the sensor gone
+    // (typically after suspend) that cancel stalls and the reply arrives late.
+    void delayReplies(int releaseMs, int verifyStopMs) {
+      releaseDelayMs = releaseMs;
+      verifyStopDelayMs = verifyStopMs;
     }
 
     // fprintd unexports the device object when the reader is unplugged.
@@ -99,6 +113,12 @@ namespace {
     }
 
   private:
+    static void hang(const std::atomic<int>& delayMs) {
+      if (delayMs > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+      }
+    }
+
     [[nodiscard]] std::string currentSender() const { return device->getCurrentlyProcessedMessage().getSender(); }
 
     void claim(const std::string& sender) {
@@ -141,6 +161,8 @@ namespace {
     std::unique_ptr<sdbus::IConnection> connection;
     std::unique_ptr<sdbus::IObject> manager;
     std::unique_ptr<sdbus::IObject> device;
+    std::atomic<int> releaseDelayMs{0};
+    std::atomic<int> verifyStopDelayMs{0};
     mutable std::mutex mutex;
     std::string claimOwner;
     std::vector<Call> log;
@@ -193,7 +215,7 @@ namespace {
     TEST_CHECK(fake.owner() == self);                 // the claim is held until cleanup, as before
 
     auth.stop();
-    TEST_CHECK(fake.accepted("Release", self) == 1);
+    drainUntil(bus, [&]() { return fake.accepted("Release", self) == 1; });
     TEST_CHECK(fake.owner().empty());
 
     // The next attempt from the same long-lived connection must be able to claim again (#4591).
@@ -202,7 +224,7 @@ namespace {
     TEST_CHECK(fake.accepted("Claim", self) == 2);
 
     auth.stop();
-    TEST_CHECK(fake.owner().empty());
+    drainUntil(bus, [&]() { return fake.owner().empty(); });
   }
 
   void matchedVerifyReleasesClaimOnStop() {
@@ -218,7 +240,7 @@ namespace {
     drainUntil(bus, [&]() { return authenticated == 1; });
 
     auth.stop();
-    TEST_CHECK(fake.owner().empty());
+    drainUntil(bus, [&]() { return fake.owner().empty(); });
     const std::vector<std::string> expected{"Claim", "VerifyStart", "VerifyStop", "Release"};
     TEST_CHECK(fake.acceptedMethods(self) == expected);
   }
@@ -281,6 +303,45 @@ namespace {
     TEST_CHECK(std::chrono::steady_clock::now() - begin < std::chrono::seconds(2));
   }
 
+  // The UI thread must never wait on fprintd: a Release that fprintd answers only after its bus timeout
+  // (sensor gone after suspend) used to freeze the lock screen for 25 s on unlock.
+  void stopDoesNotWaitForUnresponsiveRelease() {
+    FakeFprintd fake;
+    SystemBus bus;
+    FingerprintAuthenticator auth(bus);
+    const std::string self = bus.connection().getUniqueName();
+
+    armAndWaitForVerify(auth, bus, fake, self);
+    fake.delayReplies(1200, 0);
+
+    const auto begin = std::chrono::steady_clock::now();
+    auth.stop();
+    TEST_CHECK(std::chrono::steady_clock::now() - begin < std::chrono::milliseconds(800));
+
+    // The request still reaches fprintd, which releases the claim once it gets to it.
+    drainUntil(bus, [&]() { return fake.owner().empty(); });
+  }
+
+  void verifyResultDoesNotWaitForUnresponsiveVerifyStop() {
+    FakeFprintd fake;
+    SystemBus bus;
+    FingerprintAuthenticator auth(bus);
+    const std::string self = bus.connection().getUniqueName();
+    int authenticated = 0;
+    auth.setAuthenticatedCallback([&authenticated]() { ++authenticated; });
+
+    armAndWaitForVerify(auth, bus, fake, self);
+    fake.delayReplies(0, 1200);
+
+    const auto begin = std::chrono::steady_clock::now();
+    fake.emitVerifyStatus("verify-match", true);
+    drainUntil(bus, [&]() { return authenticated == 1; });
+    TEST_CHECK(std::chrono::steady_clock::now() - begin < std::chrono::milliseconds(800));
+
+    auth.stop();
+    drainUntil(bus, [&]() { return fake.owner().empty(); });
+  }
+
 } // namespace
 
 int main() {
@@ -289,5 +350,7 @@ int main() {
   foreignClaimIsLeftAlone();
   stopAfterDeviceRemovalIsBounded();
   stopAfterServiceExitIsBounded();
+  stopDoesNotWaitForUnresponsiveRelease();
+  verifyResultDoesNotWaitForUnresponsiveVerifyStop();
   return 0;
 }
