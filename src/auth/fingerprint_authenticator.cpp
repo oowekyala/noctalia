@@ -57,6 +57,24 @@ namespace {
     return it == kResults.end() ? MatchResult::Invalid : it->second;
   }
 
+  // Release and VerifyStop make fprintd cancel the operation running on the sensor, and that cancel
+  // never completes when the sensor has dropped off USB (typically across suspend). The call is then
+  // answered only by the bus timeout (25 s), which would freeze the UI thread, so neither is awaited:
+  // calls on one connection are processed in order, which is all the callers rely on.
+  void sendDeviceCommand(sdbus::IProxy& device, const char* method) {
+    try {
+      device.callMethodAsync(method)
+          .onInterface(kDeviceInterface)
+          .uponReplyInvoke([method](std::optional<sdbus::Error> e) {
+            if (e.has_value()) {
+              kLog.debug("fingerprint {} failed: {}", method, e->what());
+            }
+          });
+    } catch (const sdbus::Error& e) {
+      kLog.debug("fingerprint {} dispatch failed: {}", method, e.what());
+    }
+  }
+
   bool isRecoverableVerifyStartError(const sdbus::Error& error) {
     // Suspend/resume can drop the claim while the proxy survives; only that case is worth
     // recreating+reclaiming. Other VerifyStart failures are permanent for this lock attempt.
@@ -247,24 +265,17 @@ void FingerprintAuthenticator::stopVerify() {
   if (m_device == nullptr) {
     return;
   }
-  try {
-    m_device->callMethod("VerifyStop").onInterface(kDeviceInterface);
-    kLog.debug("fingerprint verification stopped");
-  } catch (const sdbus::Error& e) {
-    kLog.debug("could not stop fingerprint verification: {}", e.what());
-  }
+  sendDeviceCommand(*m_device, "VerifyStop");
+  kLog.debug("stopping fingerprint verification");
 }
 
 void FingerprintAuthenticator::releaseDevice() {
   if (m_device == nullptr) {
     return;
   }
-  try {
-    m_device->callMethod("Release").onInterface(kDeviceInterface);
-    kLog.info("released fingerprint device");
-  } catch (const sdbus::Error& e) {
-    kLog.debug("could not release fingerprint device: {}", e.what());
-  }
+  // Dropping the proxy cancels only the local wait for the reply; the request is already on the bus.
+  sendDeviceCommand(*m_device, "Release");
+  kLog.info("releasing fingerprint device");
   m_device.reset();
 }
 
