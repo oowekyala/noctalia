@@ -31,6 +31,7 @@
 #include <nlohmann/json.hpp>
 #include <sodium.h>
 #include <thread>
+#include <unistd.h>
 #include <unordered_set>
 
 namespace {
@@ -109,6 +110,9 @@ namespace {
     }
     return calendar::SyncFailure::Credentials;
   }
+
+  // Whether this process can read the file at path, as libcurl must to load a client certificate or key.
+  bool isReadableFile(const std::string& path) { return !path.empty() && ::access(path.c_str(), R_OK) == 0; }
 
   void wipeString(std::string& value) {
     if (!value.empty()) {
@@ -764,10 +768,24 @@ void CalendarService::fetchCalDav(const CalendarConfig::Account& account) {
     return;
   }
 
+  std::shared_ptr<const HttpTlsClientCert> tls;
+  if (!account.clientCertFile.empty() || !account.clientKeyFile.empty()) {
+    // libcurl would only report an unreadable file as a failed connection.
+    if (!isReadableFile(account.clientCertFile) || !isReadableFile(account.clientKeyFile)) {
+      kLog.warn("caldav account {} client_cert_file or client_key_file is not readable", account.id);
+      accountDone(account.id, calendar::SyncFailure::ClientCertificate, {});
+      return;
+    }
+    auto material = std::make_shared<HttpTlsClientCert>();
+    material->clientCertPath = account.clientCertFile;
+    material->clientKeyPath = account.clientKeyFile;
+    tls = std::move(material);
+  }
+
   lookupCalDavPassword(
       account,
-      [this, account, serverUrl,
-       username](security::SecretStoreStatus status, calendar::CalendarCredentialStore::Secret password) mutable {
+      [this, account, serverUrl, username,
+       tls](security::SecretStoreStatus status, calendar::CalendarCredentialStore::Secret password) mutable {
         if (status != security::SecretStoreStatus::Success || !password || password->empty()) {
           if (status == security::SecretStoreStatus::NotFound) {
             kLog.warn("caldav account {} has no stored password", account.id);
@@ -783,8 +801,8 @@ void CalendarService::fetchCalDav(const CalendarConfig::Account& account) {
         const bool allowRedirectAuth = account.provider == "icloud";
 
         calendar::discoverCalDavCollections(
-            m_httpClient, serverUrl, username, password, allowRedirectAuth, m_activeConfig.requestTimeoutSeconds,
-            [this, accountId, username, password, accountColor, selectedCalendars, allowRedirectAuth,
+            m_httpClient, serverUrl, username, password, allowRedirectAuth, m_activeConfig.requestTimeoutSeconds, tls,
+            [this, accountId, username, password, accountColor, selectedCalendars, allowRedirectAuth, tls,
              now](calendar::SyncFailure discoveryFailure, std::vector<calendar::CalDavCollection> collections) {
               if (discoveryFailure != calendar::SyncFailure::None) {
                 accountDone(accountId, discoveryFailure, {});
@@ -831,6 +849,7 @@ void CalendarService::fetchCalDav(const CalendarConfig::Account& account) {
                 caldav.calendarName = collection.name;
                 caldav.color = accountColor.empty() ? collection.color : accountColor;
                 caldav.timeoutSeconds = m_activeConfig.requestTimeoutSeconds;
+                caldav.tls = tls;
 
                 m_caldav.fetchEvents(
                     caldav, syncWindowStart(now), syncWindowEnd(now), allowRedirectAuth,

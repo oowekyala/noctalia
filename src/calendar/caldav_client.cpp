@@ -217,6 +217,7 @@ namespace calendar {
     req.basicUsername = account.username;
     req.basicPassword = secretString(account.password);
     req.timeoutSeconds = account.timeoutSeconds;
+    req.tlsClientCert = account.tls;
     req.headers = {
         "Depth: 1",
         "Content-Type: application/xml; charset=utf-8",
