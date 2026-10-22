@@ -626,6 +626,7 @@ CompositorPlatform::~CompositorPlatform() {
   m_wayland.setKdeVirtualDesktopManagerCallback({});
   m_wayland.setHyprlandToplevelMappingManagerCallback({});
   m_wayland.setToplevelChangeCallback({});
+  m_wayland.setKeyboardLayoutChangeCallback({});
 }
 
 void CompositorPlatform::startKdeActiveWindow(SessionBus& bus) {
@@ -1611,6 +1612,9 @@ void CompositorPlatform::setKeyboardLayoutChangeCallback(ChangeCallback callback
   if (m_keyboardLayoutBackend != nullptr) {
     m_keyboardLayoutBackend->setChangeCallback(m_keyboardLayoutChangeCallback);
     m_keyboardLayoutBackend->connectSocket();
+  } else {
+    // No compositor IPC: the seat's xkb group is the only layout source, so it drives change events.
+    m_wayland.setKeyboardLayoutChangeCallback(m_keyboardLayoutChangeCallback);
   }
 }
 
@@ -1740,6 +1744,19 @@ bool CompositorPlatform::isOverviewOpen() const noexcept {
     return true;
   }
   return m_workspaceMetadataBackend->isOverviewOpen();
+}
+
+bool CompositorPlatform::closeOverview() const {
+  if (!tracksOverviewState() || !hasOverviewState() || !isOverviewOpen()) {
+    return false;
+  }
+  if (compositors::isUmbriel()) {
+    return umbrielRuntime().requestAction("overview-toggle");
+  }
+  if (compositors::isNiri()) {
+    return niriRuntime().requestAction(nlohmann::json{{"ToggleOverview", nlohmann::json::object()}});
+  }
+  return false;
 }
 
 void CompositorPlatform::bindExtWorkspace(ext_workspace_manager_v1* manager) {

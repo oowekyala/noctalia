@@ -745,6 +745,9 @@ void Application::initStyleThemeAndWayland() {
       m_hookManager.fire(HookKind::ColorsChanged);
     }
   });
+  m_templateApplyService.setWarningCallback([this](std::string_view warning) {
+    m_settingsWindow.showTransientStatus(std::string(warning), true);
+  });
 
   m_themeService.setResolvedCallback([this, lastResolvedThemeMode = std::optional<std::string>{},
                                       lastGeneratedPalette = std::optional<noctalia::theme::GeneratedPalette>{},
@@ -1042,6 +1045,7 @@ void Application::initAuxServicesAndHooks() {
 
   m_themeService.setChangeCallback([this]() {
     requestAllSurfacesRedraw();
+    m_bar.refresh();
     m_lockScreen.onThemeChanged();
     m_trayMenu.onThemeChanged();
     m_backdrop.onThemeChanged();
@@ -1214,6 +1218,8 @@ void Application::initSystemBusServices() {
             });
           }
           requestAllSurfacesRedraw();
+          // The time poll deadline is monotonic and stalls across suspend; refresh clocks now.
+          DeferredCall::callLater([this]() { m_timeService.forceTick(); });
         });
         kLog.info("logind sleep monitor active");
         m_idleInhibitor.setLogindService(m_logindService.get());
@@ -1391,6 +1397,7 @@ void Application::initSystemBusServices() {
 
     try {
       m_bluetoothService = std::make_unique<BluetoothService>(*m_systemBus, m_upowerService.get());
+      m_bluetoothService->setConnectWhenEnabled(m_configService.config().bluetooth.connectWhenEnabled);
       auto refreshBluetoothUi = [this, shouldRefreshControlCenter]() {
         m_bar.refresh();
         if (shouldRefreshControlCenter()) {
@@ -1429,6 +1436,11 @@ void Application::initSystemBusServices() {
         m_bluetoothAgent.reset();
       }
     }
+    m_configService.addReloadCallback([this]() {
+      if (m_bluetoothService != nullptr) {
+        m_bluetoothService->setConnectWhenEnabled(m_configService.config().bluetooth.connectWhenEnabled);
+      }
+    });
 
     try {
       m_modemManagerService = std::make_unique<ModemManagerService>(*m_systemBus);
