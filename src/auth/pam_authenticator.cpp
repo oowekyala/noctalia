@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <climits>
 #include <cstdint>
+#include <cstdlib>
 #include <fcntl.h>
 #include <pthread.h>
 #include <pwd.h>
@@ -133,10 +134,20 @@ namespace {
     return true;
   }
 
-  // A helper next to the running binary (build tree, portable bundle) wins over
+  // NOCTALIA_PAM_HELPER_PATH names the helper to use, before any other: the helper links the PAM
+  // library that reads the host's /etc/pam.d, so a shell built elsewhere (e.g. by Nix on another
+  // distribution) can pair with one built against the host's libpam. Whoever sets the shell's
+  // environment already controls the session, so this crosses no privilege boundary.
+  // Otherwise, a helper next to the running binary (build tree, portable bundle) wins over
   // the installed one, so a dev build never talks to an older installed helper.
   // Installed binaries have no helper beside them in bindir.
   [[nodiscard]] std::string resolveHelperPath() {
+    if (const char* override = std::getenv("NOCTALIA_PAM_HELPER_PATH"); override != nullptr && *override != '\0') {
+      if (::access(override, X_OK) == 0) {
+        return override;
+      }
+      kLog.warn("NOCTALIA_PAM_HELPER_PATH={} is not executable; using the default helper", override);
+    }
     std::array<char, PATH_MAX> exe{};
     const ssize_t n = ::readlink("/proc/self/exe", exe.data(), exe.size() - 1);
     if (n > 0) {

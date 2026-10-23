@@ -153,6 +153,10 @@ compiled install path.
 
 `noctalia-pam-helper` is looked up next to the executable first, then at the
 compiled install path (`<prefix>/<libexecdir>/noctalia/noctalia-pam-helper`).
+`NOCTALIA_PAM_HELPER_PATH`, when set to an executable, is used before both. It
+lets a shell built for another system use a helper built against the host's
+libpam, e.g. a Nix-built Noctalia on a non-NixOS distribution, whose own helper
+links nixpkgs' libpam and cannot use the host's `/etc/pam.d` stack.
 
 Not shipped (don’t look for them in the install): AppStream / metainfo XML, man
 pages, systemd units.
